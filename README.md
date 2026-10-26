@@ -1,6 +1,6 @@
 # PCL Tutor — Midterm Prototype
 
-Practice Centered Learning (PCL) Tutor is a React-only prototype for the Midterm Web & Mobile Application Development project. It keeps the official midterm scope: two roles, hardcoded data, role-based menus/dashboards, and a working tutoring-booking flow. No backend, database, or real authentication is used at this stage.
+Practice Centered Learning (PCL) Tutor is a React-only prototype for the Midterm Web & Mobile Application Development project. Two roles, hardcoded data, role-based menus/dashboards, and a working tutoring-booking flow. 
 
 ## Demo accounts
 
