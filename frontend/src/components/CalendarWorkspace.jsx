@@ -48,6 +48,13 @@ export default function CalendarWorkspace({ items = [], availability = {}, tutor
     setLastRemoved(null);
   };
 
+  const resetToCurrentWeek = () => {
+    setWeekOffset(0);
+    setSelectedDate(datesForWeek(0)[0]);
+    setNotice('');
+    setLastRemoved(null);
+  };
+
   const confirmRemove = () => {
     const slot = pendingRemoval;
     setPendingRemoval(null);
@@ -76,7 +83,7 @@ export default function CalendarWorkspace({ items = [], availability = {}, tutor
     <section className="calendar-workspace">
       <div className="calendar-workspace-head">
         <div><span className="eyebrow">Interactive calendar</span><h2>{pretty(dates[0])} — {pretty(dates[6])}</h2><p>Pick a day to see the exact sessions, requests, or open tutoring times.</p></div>
-        <div className="calendar-controls"><button className="icon-button" onClick={() => shiftWeek(-1)} aria-label="Previous week"><Icon name="arrowLeft" size={16} /></button><button className="ghost-button" onClick={() => { setWeekOffset(0); setSelectedDate(datesForWeek(0)[0]); }}>This week</button><button className="icon-button" onClick={() => shiftWeek(1)} aria-label="Next week"><Icon name="arrowRight" size={16} /></button></div>
+        <div className="calendar-controls"><button className="icon-button" onClick={() => shiftWeek(-1)} aria-label="Previous week"><Icon name="arrowLeft" size={16} /></button><button className="ghost-button" onClick={resetToCurrentWeek}>This week</button><button className="icon-button" onClick={() => shiftWeek(1)} aria-label="Next week"><Icon name="arrowRight" size={16} /></button></div>
       </div>
 
       <div className="week-strip">
@@ -84,7 +91,13 @@ export default function CalendarWorkspace({ items = [], availability = {}, tutor
           const dateObj = new Date(`${date}T12:00:00`);
           const count = items.filter((item) => item.date === date).length;
           const openCount = tutorId ? (availability?.[tutorId]?.[date] || []).length : 0;
-          return           <button type="button" key={date} className={`week-day ${selectedDate === date ? 'selected' : ''}`} onClick={() => selectDay(date)}><span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(dateObj)}</span><strong>{dateObj.getDate()}</strong><small>{tutorId ? `${openCount} open` : `${count} item${count !== 1 ? 's' : ''}`}</small></button>;
+          return (
+            <button type="button" key={date} className={`week-day ${selectedDate === date ? 'selected' : ''}`} onClick={() => selectDay(date)}>
+              <span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(dateObj)}</span>
+              <strong>{dateObj.getDate()}</strong>
+              <small>{tutorId ? `${openCount} open` : `${count} item${count !== 1 ? 's' : ''}`}</small>
+            </button>
+          );
         })}
       </div>
 

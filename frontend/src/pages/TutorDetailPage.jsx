@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import Avatar from '../components/Avatar';
 import { Icon } from '../components/icons';
-import { TUTORS } from '../data/mockData';
 import { slotKey } from '../lib/slots';
 
 function formatDate(date) {
@@ -18,28 +17,28 @@ function nextSevenDates() {
   });
 }
 
-export default function TutorDetailPage({ user, availability = {} }) {
+export default function TutorDetailPage({ user, tutors = [], availability = {} }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const tutor = TUTORS.find((item) => item.id === id);
+  const tutor = tutors.find((item) => item.id === id || item.tutorId === id);
   const dates = useMemo(nextSevenDates, []);
   // Published and tutor-added slots live in the same App state now, so there is one
   // list per day and no merge that could offer the same hour twice.
   const slotsByDate = availability?.[tutor?.id] || {};
   const [selectedDate, setSelectedDate] = useState(dates.find((date) => slotsByDate[date]) || dates[0]);
 
-  if (!tutor) return <div className="empty-state large"><strong>Tutor not found.</strong><span>The requested tutor is not in the demo data.</span><Link className="ghost-button" to="/find">Back to tutor library</Link></div>;
+  if (!tutor) return <div className="empty-state large"><strong>Tutor not found.</strong><span>This tutor is no longer listed in the workspace.</span><Link className="ghost-button" to="/find">Back to tutor library</Link></div>;
 
   const slots = [...(slotsByDate[selectedDate] || [])].sort((a, b) => a.time.localeCompare(b.time));
-  const isStudent = user.role === 'student';
+  const isStudent = user?.role === 'student';
 
   return (
     <div className="detail-page detail-page-v2">
       <div className="detail-topbar"><button className="back-button" onClick={() => navigate(-1)}><Icon name="arrowLeft" size={16} /> Back</button><span className="detail-breadcrumb">Tutor profile / {tutor.name}</span></div>
 
       <section className="profile-hero-v2">
-        <div className="profile-hero-art" style={{ '--profile-accent': tutor.accent }}><span className="profile-grid-mark" /><span className="profile-hero-label">PCL TUTOR</span><strong>{tutor.subjects[0]}</strong></div>
-        <div className="profile-hero-copy"><div className="profile-hero-identity"><Avatar initials={tutor.initials} accent={tutor.accent} size="lg" /><div><span className="eyebrow">Tutor / Mentor</span><h1>{tutor.name}</h1><p>{tutor.major} · Semester {tutor.semester}</p></div></div><p className="profile-hero-about">{tutor.about}</p><div className="profile-hero-stats"><span><strong>{tutor.rating}</strong> rating</span><span><strong>{tutor.sessions}</strong> sessions</span><span><strong>{tutor.participantsToday}</strong> today</span></div><div className="profile-hero-actions">{isStudent && <Link className="primary-button" to={`/booking?tutor=${tutor.id}`}><Icon name="plus" size={16} /> Book a session</Link>}<Link className="ghost-button" to="/sessions"><Icon name="calendar" size={15} /> View full calendar</Link></div></div>
+        <div className="profile-hero-art" style={{ '--profile-accent': tutor.accent }}><span className="profile-grid-mark" /><span className="profile-hero-label">PCL TUTOR</span><strong>{tutor.subjects[0] || 'New tutor'}</strong></div>
+        <div className="profile-hero-copy"><div className="profile-hero-identity"><Avatar initials={tutor.initials} accent={tutor.accent} size="lg" /><div><span className="eyebrow">Tutor / Mentor</span><h1>{tutor.name}</h1><p>{tutor.major} · Semester {tutor.semester}</p></div></div><p className="profile-hero-about">{tutor.about || 'This tutor has not added a bio yet.'}</p><div className="profile-hero-stats"><span><strong>{tutor.rating}</strong> rating</span><span><strong>{tutor.sessions}</strong> sessions</span><span><strong>{tutor.participantsToday}</strong> today</span></div><div className="profile-hero-actions">{isStudent && <Link className="primary-button" to={`/booking?tutor=${tutor.id}`}><Icon name="plus" size={16} /> Book a session</Link>}<Link className="ghost-button" to="/sessions"><Icon name="calendar" size={15} /> View full calendar</Link></div></div>
       </section>
 
       <section className="detail-content-grid">
@@ -51,8 +50,8 @@ export default function TutorDetailPage({ user, availability = {} }) {
         </section>
 
         <aside className="profile-side-column">
-          <section className="side-info-card"><span className="eyebrow">Subjects</span><h3>What they can help with</h3><div className="subject-stack">{tutor.subjects.map((subject) => <span className="subject-chip" key={subject}>{subject}</span>)}</div></section>
-          <section className="side-info-card"><span className="eyebrow">Format</span><h3>How sessions work</h3><div className="mode-stack">{tutor.modes.map((mode) => <span className="mode-pill" key={mode}>{mode}</span>)}</div><p>Choose your format during booking. The tutor confirms the final request.</p></section>
+          <section className="side-info-card"><span className="eyebrow">Subjects</span><h3>What they can help with</h3><div className="subject-stack">{tutor.subjects.length ? tutor.subjects.map((subject) => <span className="subject-chip" key={subject}>{subject}</span>) : <span className="muted-label">No subjects added yet.</span>}</div></section>
+          <section className="side-info-card"><span className="eyebrow">Format</span><h3>How sessions work</h3><div className="mode-stack">{tutor.modes.length ? tutor.modes.map((mode) => <span className="mode-pill" key={mode}>{mode}</span>) : <span className="muted-label">No published formats yet.</span>}</div><p>Choose your format during booking. The tutor confirms the final request.</p></section>
           <section className="side-info-card"><span className="eyebrow">Activity</span><h3>Today</h3><div className="activity-stat-row"><strong>{tutor.participantsToday}</strong><span>participants have sessions with this tutor today.</span></div></section>
         </aside>
       </section>

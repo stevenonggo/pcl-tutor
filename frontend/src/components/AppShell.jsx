@@ -5,11 +5,11 @@ import Avatar from './Avatar';
 import ConfirmDialog from './ConfirmDialog';
 import NotificationPopover from './NotificationPopover';
 import { Icon } from './icons';
-import { NOTIFICATIONS } from '../data/mockData';
 
 const studentNav = [
   { label: 'Home', to: '/', icon: 'home', end: true },
   { label: 'Find a Tutor', to: '/find', icon: 'search' },
+  { label: 'Study Plan', to: '/study-plan', icon: 'plan' },
   { label: 'Requests', to: '/requests', icon: 'users' },
   { label: 'My Sessions', to: '/sessions', icon: 'calendar' },
 ];
@@ -22,13 +22,12 @@ const tutorNav = [
   { label: 'Subjects', to: '/subjects', icon: 'book' },
 ];
 
-export default function AppShell({ user, children, collapsed, setCollapsed, onOpenSettings, onLogout }) {
+export default function AppShell({ user, notifications = [], children, collapsed, setCollapsed, onOpenSettings, onLogout }) {
   const location = useLocation();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   // Keep navigation role-aware so each actor only sees actions relevant to them.
-  const notifications = NOTIFICATIONS[user.role] || [];
   const nav = user.role === 'tutor' ? tutorNav : studentNav;
 
   useEffect(() => setMobileOpen(false), [location.pathname, location.search]);

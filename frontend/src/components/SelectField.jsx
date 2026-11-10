@@ -89,9 +89,11 @@ export default function SelectField({
 
   const moveFocus = (event, index) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    if (!items.length) return;
     event.preventDefault();
     const step = event.key === 'ArrowDown' ? 1 : -1;
-    const next = items[(index + step + items.length) % items.length];
+    const start = index < 0 ? (step === 1 ? -1 : 0) : index;
+    const next = items[(start + step + items.length) % items.length];
     listRef.current?.querySelector(`#${CSS.escape(`${groupId}-${next.value}`)}`)?.focus();
   };
 
@@ -158,6 +160,7 @@ export default function SelectField({
               onKeyDown={(event) => {
                 if (event.key === 'Home' || event.key === 'End') {
                   event.preventDefault();
+                  if (!items.length) return;
                   const edge = event.key === 'Home' ? items[0] : items[items.length - 1];
                   listRef.current?.querySelector(`#${CSS.escape(`${groupId}-${edge.value}`)}`)?.focus();
                   return;

@@ -2,21 +2,28 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Avatar from '../components/Avatar';
 import { Icon } from '../components/icons';
-import { CALENDAR_EVENTS, TUTORS } from '../data/mockData';
+import { SUBJECTS } from '../data/catalog';
 
 function formatDate(date) {
+  if (!date) return '';
   return new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${date}T12:00:00`));
+}
+
+// The week window is derived from the local "today" instead of a fixed demo date, so the
+// snapshot follows the live calendar. ISO dates are built from local parts to avoid the
+// UTC off-by-one day shift that toISOString() causes in timezones ahead of UTC.
+function nextDates(count) {
+  const now = new Date();
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
 }
 
 function QuickCalendar({ sessions, requests, role }) {
   const navigate = useNavigate();
-  const nextDays = Array.from({ length: 5 }, (_, index) => {
-    const date = new Date('2026-09-28T12:00:00');
-    date.setDate(date.getDate() + index);
-    return date.toISOString().slice(0, 10);
-  });
+  const nextDays = nextDates(5);
   const items = [
-    ...CALENDAR_EVENTS,
     ...sessions.map((session) => ({ id: session.id, date: session.date, time: session.time, label: session.subject, type: 'session' })),
     ...requests.map((request) => ({ id: request.id, date: request.date, time: request.time, label: `${request.subject} · ${role === 'tutor' ? request.studentName : request.tutorName}`, type: 'request' })),
   ];
@@ -27,7 +34,7 @@ function QuickCalendar({ sessions, requests, role }) {
       <div className="mini-week">
         {nextDays.map((date) => {
           const day = new Date(`${date}T12:00:00`);
-          const dayItems = items.filter((item) => item.date === date).sort((a, b) => a.time.localeCompare(b.time));
+          const dayItems = items.filter((item) => item.date === date).sort((a, b) => String(a.time || '').localeCompare(String(b.time || '')));
           return (
             <button type="button" className={`mini-day ${dayItems.length ? 'has-item' : ''}`} key={date} onClick={() => navigate(`/sessions?date=${date}`)}>
               <span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(day)}</span>
@@ -63,7 +70,7 @@ function PendingSummary({ requests, role }) {
 function SearchHero({ onSearch }) {
   const [query, setQuery] = useState('');
   const [subject, setSubject] = useState('');
-  const subjects = ['Linear Algebra', 'Deep Learning', 'Calculus', 'Human Computer Interaction', 'Web Development'];
+  const subjects = SUBJECTS.slice(0, 5);
   const submit = (event) => {
     event.preventDefault();
     onSearch(query || subject ? { q: query, subject } : {});
@@ -81,12 +88,25 @@ function SearchHero({ onSearch }) {
   );
 }
 
-export default function DashboardPage({ user, sessions = [], requests = [] }) {
+export default function DashboardPage({ user, sessions = [], requests = [], tutors = [], availability = {} }) {
   const navigate = useNavigate();
+  // A session can reference a tutor that no longer exists in the database; every read
+  // of the resolved record below uses optional chaining, so a missing record degrades
+  // to a fallback display instead of crashing the dashboard.
+  if (!user) return null;
   const isStudent = user.role === 'student';
-  const visibleSessions = sessions.filter((session) => isStudent ? session.studentName === user.name : session.tutorId === user.tutorId);
+  const visibleSessions = sessions.filter((session) => (
+    isStudent
+      ? (session.studentId ? session.studentId === user.id : session.studentName === user.name)
+      : (session.tutorId === user.tutorId || session.tutorId === user.id)
+  ));
   const nextSession = visibleSessions.find((session) => session.status === 'Confirmed') || visibleSessions[0];
-  const currentTutor = TUTORS.find((item) => item.id === nextSession?.tutorId) || TUTORS[0];
+  const currentTutor = tutors.find((item) => item.id === nextSession?.tutorId || item.tutorId === nextSession?.tutorId) || null;
+  const tutorAvailability = availability?.[user.tutorId] || availability?.[user.id] || {};
+  const weekDays = nextDates(5).map((value) => ({
+    label: new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(`${value}T12:00:00`)),
+    value,
+  }));
 
   const goSearch = (params) => {
     const search = new URLSearchParams();
@@ -109,7 +129,7 @@ export default function DashboardPage({ user, sessions = [], requests = [] }) {
             <PendingSummary requests={requests} role="student" />
             <section className="home-card next-session-compact">
               <div className="home-card-head"><div><span className="eyebrow">Next session</span><h2>{nextSession ? nextSession.subject : 'No session yet'}</h2><p>{nextSession ? nextSession.topic : 'Your confirmed study sessions will appear here.'}</p></div><span className={`status-pill ${nextSession?.status?.toLowerCase() || 'pending'}`}>{nextSession?.status || 'Open'}</span></div>
-              {nextSession ? <><div className="next-session-line"><strong>{formatDate(nextSession.date)}</strong><span>{nextSession.time} · {nextSession.mode}{nextSession.location ? ` · ${nextSession.location}` : ''}</span></div><div className="next-session-person"><Avatar initials={currentTutor.initials} accent={currentTutor.accent} /><div><strong>{nextSession.tutorName}</strong><span>{currentTutor.major}</span></div></div><Link className="secondary-button" to="/sessions">See all sessions <Icon name="arrowRight" size={14} /></Link></> : <Link className="primary-button" to="/find">Find a tutor</Link>}
+              {nextSession ? <><div className="next-session-line"><strong>{formatDate(nextSession.date)}</strong><span>{nextSession.time} · {nextSession.mode}{nextSession.location ? ` · ${nextSession.location}` : ''}</span></div><div className="next-session-person"><Avatar initials={currentTutor?.initials || nextSession.tutorName?.slice(0, 2).toUpperCase() || '?'} accent={currentTutor?.accent || '#0B8F68'} /><div><strong>{nextSession.tutorName}</strong><span>{currentTutor?.major || 'Tutor'}</span></div></div><Link className="secondary-button" to="/sessions">See all sessions <Icon name="arrowRight" size={14} /></Link></> : <Link className="primary-button" to="/find">Find a tutor</Link>}
             </section>
           </section>
           <QuickCalendar sessions={visibleSessions} requests={requests} role="student" />
@@ -122,7 +142,7 @@ export default function DashboardPage({ user, sessions = [], requests = [] }) {
               {nextSession && <div className="tutor-next-detail"><div><span className="muted-label">When</span><strong>{formatDate(nextSession.date)}</strong><span>{nextSession.time} · {nextSession.mode}</span></div><div><span className="muted-label">Student</span><strong>{nextSession.studentName}</strong><span>Student / Mentee</span></div></div>}
               <div className="home-card-actions"><Link className="secondary-button" to="/sessions">Open calendar</Link><Link className="primary-button" to="/requests">Review requests</Link></div>
             </section>
-            <section className="home-card availability-snapshot"><div className="home-card-head"><div><span className="eyebrow">Your week</span><h2>Availability</h2><p>Keep your open hours easy to discover.</p></div><Link className="text-link" to="/availability">Manage <Icon name="arrowRight" size={14} /></Link></div><div className="availability-snapshot-grid">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((day, index) => <button type="button" key={day} onClick={() => navigate('/availability')}><span>{day}</span><strong>{[2, 2, 1, 2, 1][index]}</strong><small>open slots</small></button>)}</div></section>
+            <section className="home-card availability-snapshot"><div className="home-card-head"><div><span className="eyebrow">Your week</span><h2>Availability</h2><p>Keep your open hours easy to discover.</p></div><Link className="text-link" to="/availability">Manage <Icon name="arrowRight" size={14} /></Link></div><div className="availability-snapshot-grid">{weekDays.map((day) => <button type="button" key={day.value} onClick={() => navigate('/availability')}><span>{day.label}</span><strong>{(tutorAvailability[day.value] || []).length}</strong><small>open slots</small></button>)}</div></section>
           </section>
           <PendingSummary requests={requests} role="tutor" />
           <QuickCalendar sessions={visibleSessions} requests={requests} role="tutor" />

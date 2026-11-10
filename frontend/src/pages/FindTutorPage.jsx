@@ -3,9 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import TutorCard from '../components/TutorCard';
 import SelectField from '../components/SelectField';
 import { Icon } from '../components/icons';
-import { SUBJECTS, TUTORS } from '../data/mockData';
+import { SUBJECTS } from '../data/catalog';
 
-export default function FindTutorPage() {
+export default function FindTutorPage({ tutors = [] }) {
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') || '');
   const [subject, setSubject] = useState(params.get('subject') || 'All subjects');
@@ -15,7 +15,7 @@ export default function FindTutorPage() {
 
   const filteredTutors = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const results = TUTORS.filter((tutor) => {
+    const results = tutors.filter((tutor) => {
       const matchText = !q || tutor.name.toLowerCase().includes(q) || tutor.subjects.some((item) => item.toLowerCase().includes(q));
       const matchSubject = subject === 'All subjects' || tutor.subjects.includes(subject);
       const matchMode = mode === 'All formats' || tutor.modes.includes(mode);
@@ -26,7 +26,7 @@ export default function FindTutorPage() {
       if (sort === 'Sessions') return b.sessions - a.sessions;
       return Number(b.rating) - Number(a.rating) || b.sessions - a.sessions;
     });
-  }, [search, subject, mode, sort]);
+  }, [search, subject, mode, sort, tutors]);
 
   const activeSearch = Boolean(search.trim() || subject !== 'All subjects' || mode !== 'All formats');
 
@@ -80,7 +80,7 @@ export default function FindTutorPage() {
 
       <section className="tutor-results">
         <div className="section-head-inline"><div><span className="eyebrow">Tutor library</span><h2>{activeSearch ? 'Your matches' : 'Recommended tutors'}</h2><p>{activeSearch ? `${filteredTutors.length} result${filteredTutors.length !== 1 ? 's' : ''} based on your current search.` : 'A compact starting point. Open a profile only when you want the details.'}</p></div></div>
-        {filteredTutors.length ? <div className="tutor-grid">{filteredTutors.map((tutor) => <TutorCard tutor={tutor} key={tutor.id} />)}</div> : <div className="empty-state large"><Icon name="search" size={24} /><strong>No tutor matches that search.</strong><span>Try another subject or reset the filters.</span><button className="ghost-button" onClick={reset}>Reset search</button></div>}
+        {tutors.length === 0 ? <div className="empty-state large"><Icon name="users" size={24} /><strong>No tutors have registered yet.</strong><span>Tutor profiles will appear here after they register.</span></div> : filteredTutors.length ? <div className="tutor-grid">{filteredTutors.map((tutor) => <TutorCard tutor={tutor} key={tutor.id} />)}</div> : <div className="empty-state large"><Icon name="search" size={24} /><strong>No tutor matches that search.</strong><span>Try another subject or reset the filters.</span><button className="ghost-button" onClick={reset}>Reset search</button></div>}
       </section>
     </div>
   );

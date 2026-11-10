@@ -4,7 +4,6 @@ import Avatar from '../components/Avatar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import SelectField from '../components/SelectField';
 import { Icon } from '../components/icons';
-import { TUTORS } from '../data/mockData';
 import { CAMPUS_SPOTS, findSlot, indefiniteArticle, makeSlot, slotKey } from '../lib/slots';
 import { blockImplicitSubmit } from '../lib/forms';
 
@@ -25,7 +24,7 @@ function slotsForDate(availability, tutorId, date) {
   return [...(availability?.[tutorId]?.[date] || [])].sort((a, b) => a.time.localeCompare(b.time));
 }
 
-export default function FormPage({ user, requests, availability, onCreateSession, onAddAvailability, onRequestAction }) {
+export default function FormPage({ user, requests, tutors = [], availability, onCreateSession, onAddAvailability, onRequestAction }) {
   const params = new URLSearchParams(useLocation().search);
   const mode = params.get('mode');
   if (user.role === 'tutor' && mode === 'suggest') return <SuggestTimeForm requestId={params.get('request')} requests={requests} onRequestAction={onRequestAction} />;
@@ -33,20 +32,23 @@ export default function FormPage({ user, requests, availability, onCreateSession
   const isTutor = user.role === 'tutor';
   return isTutor
     ? <AvailabilityForm onAddAvailability={onAddAvailability} availability={availability} tutorId={user.tutorId} />
-    : <BookingForm onCreateSession={onCreateSession} availability={availability} />;
+    : <BookingForm tutors={tutors} onCreateSession={onCreateSession} availability={availability} />;
 }
 
-function BookingForm({ onCreateSession, availability = {} }) {
+function BookingForm({ tutors = [], onCreateSession, availability = {} }) {
   const location = useLocation();
   const navigate = useNavigate();
   const params = new URLSearchParams(location.search);
-  const tutorId = params.get('tutor') || 't1';
-  const initialTutor = TUTORS.find((item) => item.id === tutorId) || TUTORS[0];
-  const [tutor, setTutor] = useState(initialTutor.id);
-  const tutorData = useMemo(() => TUTORS.find((item) => item.id === tutor) || TUTORS[0], [tutor]);
-  const [subject, setSubject] = useState(tutorData.subjects[0]);
+  const tutorId = params.get('tutor') || tutors[0]?.id || '';
+  const initialTutor = tutors.find((item) => item.id === tutorId) || tutors[0] || null;
+  const [tutor, setTutor] = useState(initialTutor?.id || '');
+  const tutorData = useMemo(
+    () => tutors.find((item) => item.id === tutor) || tutors[0] || null,
+    [tutor, tutors],
+  );
+  const [subject, setSubject] = useState(tutorData?.subjects?.[0] || '');
   const [topic, setTopic] = useState('');
-  const [date, setDate] = useState(params.get('date') || Object.keys(availability[tutorData.id] || {})[0] || '');
+  const [date, setDate] = useState(params.get('date') || Object.keys(availability[tutorData?.id] || {})[0] || '');
   const [time, setTime] = useState(params.get('time') || '');
   const [mode, setMode] = useState('Online');
   const [notes, setNotes] = useState('');
@@ -57,8 +59,8 @@ function BookingForm({ onCreateSession, availability = {} }) {
   const [submitted, setSubmitted] = useState(false);
   const [review, setReview] = useState(null);
 
-  const availableDates = Object.keys(availability[tutorData.id] || {});
-  const availableTimes = date ? slotsForDate(availability, tutorData.id, date) : [];
+  const availableDates = Object.keys(availability[tutorData?.id] || {});
+  const availableTimes = date ? slotsForDate(availability, tutorData?.id, date) : [];
   const chosenTime = custom ? customTime : time;
 
   // The published slot is the source of truth for a fixed booking: it carries the mode
@@ -84,9 +86,10 @@ function BookingForm({ onCreateSession, availability = {} }) {
   };
 
   const handleTutorChange = (nextTutor) => {
-    const next = TUTORS.find((item) => item.id === nextTutor) || TUTORS[0];
+    const next = tutors.find((item) => item.id === nextTutor) || tutors[0];
+    if (!next) return;
     setTutor(next.id);
-    setSubject(next.subjects[0]);
+    setSubject(next.subjects?.[0] || '');
     setDate(Object.keys(availability[next.id] || {})[0] || '');
     setTime('');
     setCustomTime('');
@@ -97,6 +100,8 @@ function BookingForm({ onCreateSession, availability = {} }) {
 
   const submit = (event) => {
     event.preventDefault();
+    if (!tutorData) return setError('Choose a tutor first.');
+    if (!subject) return setError('Choose a subject.');
     if (!topic.trim()) return setError('Tell the tutor what you want help with.');
     if (!date) return setError('Choose a date.');
     if (custom && !chosenTime) return setError('Choose a preferred custom time.');
@@ -138,6 +143,10 @@ function BookingForm({ onCreateSession, availability = {} }) {
     setSubmitted(true);
   };
 
+  if (!tutorData) {
+    return <div className="form-page"><div className="empty-state large"><Icon name="users" size={24} /><strong>No tutors available yet.</strong><span>A tutor needs to register before a session can be requested.</span><Link className="ghost-button" to="/find">Back to tutor library</Link></div></div>;
+  }
+
   if (submitted) {
     return <div className="form-page"><div className="form-success"><div className="success-mark"><Icon name="check" size={24} /></div><span className="eyebrow">Request submitted</span><h1>You're on the tutor's radar.</h1><p>Your request to {tutorData.name} is now <strong>Pending</strong>. The new entry has been added to your dashboard.</p><div className="success-summary"><div><span>Subject</span><strong>{subject}</strong></div><div><span>When</span><strong>{date} · {chosenTime}</strong></div><div><span>Mode</span><strong>{effectiveMode}</strong></div>{effectiveLocation && <div><span>Location</span><strong>{effectiveLocation}</strong></div>}</div><div className="success-actions"><button className="primary-button" onClick={() => navigate('/')}>Go to dashboard</button><Link className="secondary-button" to={`/tutor/${tutorData.id}`}>View tutor</Link></div></div></div>;
   }
@@ -148,7 +157,7 @@ function BookingForm({ onCreateSession, availability = {} }) {
       <form className="booking-layout" onSubmit={submit} onKeyDown={blockImplicitSubmit}>
         <section className="form-card">
           <div className="form-section"><div className="form-section-head"><span className="form-step">01</span><div><h2>Tutor & subject</h2><p>Start with the person who can help.</p></div></div>
-            <div className="field-grid"><SelectField label="Tutor" value={tutor} onChange={handleTutorChange} options={TUTORS.map((item) => ({ value: item.id, label: item.name }))} /><SelectField label="Subject" value={subject} onChange={setSubject} options={tutorData.subjects} /></div>
+            <div className="field-grid"><SelectField label="Tutor" value={tutor} onChange={handleTutorChange} options={tutors.map((item) => ({ value: item.id, label: item.name }))} /><SelectField label="Subject" value={subject} onChange={setSubject} options={tutorData.subjects || []} /></div>
             <div className="mini-profile"><Avatar initials={tutorData.initials} accent={tutorData.accent} /><div><strong>{tutorData.name}</strong><span>{tutorData.rating} rating · {tutorData.sessions} sessions · {tutorData.participantsToday} today</span></div><Link className="text-link" to={`/tutor/${tutorData.id}`}>Profile <Icon name="arrowRight" size={14} /></Link></div>
           </div>
 

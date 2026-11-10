@@ -1,12 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
 import CalendarWorkspace, { datesForWeek } from '../components/CalendarWorkspace';
 import { Icon } from '../components/icons';
-import { getTutor } from '../data/mockData';
+import { findTutor } from '../lib/selectors';
 import { CAMPUS_SPOTS, indefiniteArticle, makeSlot, slotKey } from '../lib/slots';
 import { blockImplicitSubmit } from '../lib/forms';
 
-export default function AvailabilityPage({ user, availability = {}, onAddAvailability, onRemoveAvailability }) {
-  const tutor = getTutor(user.tutorId);
+export default function AvailabilityPage({ user, tutors = [], availability = {}, onAddAvailability, onRemoveAvailability }) {
+  const tutor = findTutor(tutors, user.tutorId) || user;
   const formRef = useRef(null);
   // Every published slot, including anything added this session, is read from App state
   // so the agenda and the open-slots panel can never disagree about the same day.
