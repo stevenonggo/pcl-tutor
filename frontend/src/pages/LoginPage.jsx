@@ -30,10 +30,10 @@ function AppleMark() {
 // width, so switching views never reflows the panel grid.
 export default function LoginPage({ onLogin, onRegister }) {
   const [view, setView] = useState('signin');
-  const [signInRole, setSignInRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [registerRole, setRegisterRole] = useState('student');
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
@@ -52,7 +52,7 @@ export default function LoginPage({ onLogin, onRegister }) {
     setNotice('');
   };
 
-  const submitSignIn = (event) => {
+  const submitSignIn = async (event) => {
     event.preventDefault();
     if (typeof onLogin !== 'function') return;
     if (!email.trim() || !password) {
@@ -60,9 +60,12 @@ export default function LoginPage({ onLogin, onRegister }) {
       return;
     }
     setError('');
-    // App validates against the local database; on success it sets the session and the
-    // login route redirects straight into the dashboard.
-    const result = onLogin({ email, password, role: signInRole });
+    setSigningIn(true);
+    // One shared form for both roles: the app signs in through the backend and
+    // the profile lookup reports the account's real role; on success the login
+    // route redirects straight into the dashboard.
+    const result = await onLogin({ email: email.trim(), password });
+    setSigningIn(false);
     if (result && !result.ok) setError(result.error || 'That email or password is not correct.');
   };
 
@@ -81,14 +84,12 @@ export default function LoginPage({ onLogin, onRegister }) {
   const showNotice = (message) => setNotice(message);
 
   const isRegister = view === 'register';
-  const activeRole = isRegister ? registerRole : signInRole;
+  // The role switch belongs to the registration card only; sign-in is shared.
+  const activeRole = registerRole;
   const chooseRole = (role) => {
-    if (isRegister) {
-      setRegisterRole(role);
-      // Leaving the tutor role clears the subject input so no suggestions linger.
-      if (role !== 'tutor') setSubjectQuery('');
-    }
-    else setSignInRole(role);
+    setRegisterRole(role);
+    // Leaving the tutor role clears the subject input so no suggestions linger.
+    if (role !== 'tutor') setSubjectQuery('');
   };
 
   const toggleRegisterSubject = (subject) => {
@@ -133,12 +134,14 @@ export default function LoginPage({ onLogin, onRegister }) {
           <div className="auth-card">
             <div className="auth-head">
               <h1>{isRegister ? 'Create your account.' : 'Welcome Back!'}</h1>
-              <p>{isRegister ? 'Pick a role and set up your profile. You are signed in the moment the account is created.' : 'Sign in to access your dashboard and continue your tutoring sessions.'}</p>
+              <p>{isRegister ? 'Pick a role and set up your profile. You are signed in the moment the account is created.' : 'Sign in to your account to connect, learn, and grow with PCL Tutor.'}</p>
             </div>
 
-            <div className="role-switch" aria-label={isRegister ? 'Choose your role' : 'Choose your account role'}>
-              {['student', 'tutor'].map((role) => <button key={role} type="button" className={activeRole === role ? 'selected' : ''} onClick={() => chooseRole(role)}><span className="role-switch-title">{role === 'student' ? 'Student / Mentee' : 'Tutor / Mentor'}</span><span className="role-switch-caption">{role === 'student' ? 'Find and book a tutor' : 'Manage requests and availability'}</span></button>)}
-            </div>
+            {isRegister ? (
+              <div className="role-switch" aria-label="Choose your role">
+                {['student', 'tutor'].map((role) => <button key={role} type="button" className={activeRole === role ? 'selected' : ''} onClick={() => chooseRole(role)}><span className="role-switch-title">{role === 'student' ? 'Student / Mentee' : 'Tutor / Mentor'}</span><span className="role-switch-caption">{role === 'student' ? 'Find and book a tutor' : 'Manage requests and availability'}</span></button>)}
+              </div>
+            ) : null}
 
             {isRegister ? (
               <form className="login-form register-form" onSubmit={submitRegister}>
@@ -204,7 +207,7 @@ export default function LoginPage({ onLogin, onRegister }) {
                 <label>Email<span className="input-shell"><Icon name="mail" size={15} /><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="Enter your email" /></span></label>
                 <div className="password-block"><div className="field-row"><span>Password</span><button type="button" className="forgot-link" onClick={() => showNotice('Password reset is not available in this offline build — register a new account if you cannot sign in.')}>Forgot Password?</button></div><span className="input-shell"><Icon name="lock" size={15} /><input type={showPassword ? 'text' : 'password'} aria-label="Password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="Enter your password" /><button type="button" className="input-action" aria-label={showPassword ? 'Hide password' : 'Show password'} onClick={() => setShowPassword((value) => !value)}><Icon name={showPassword ? 'eye' : 'eyeOff'} size={15} /></button></span></div>
                 {error && <div className="form-error"><Icon name="x" size={16} /><span>{error}</span></div>}
-                <button className="primary-button full" type="submit">Sign In</button>
+                <button className="primary-button full" type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Sign In'}</button>
               </form>
             )}
 

@@ -5,3 +5,4 @@ django-mongodb-backend>=5.0
 django-cors-headers>=4.3
 pymongo>=4.8
 python-dotenv>=1.0
+cryptography>=42

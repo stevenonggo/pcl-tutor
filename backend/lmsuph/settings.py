@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     # Apps
     'users',
     'tutors',
+    'aikeys',
 ]
 
 AUTH_USER_MODEL = "users.User"
@@ -129,6 +130,20 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
+# Explicit allow-list of request headers for cross-origin preflights. The
+# first seven are django-cors-headers' defaults, listed so this file is the
+# single source of truth; ``x-pcl-ai-identity`` is the web client's
+# login-independent AI device-identity header (aikeys.identity).
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-pcl-ai-identity",
+]
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -165,3 +180,37 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+
+# ---------------------------------------------------------------------------
+# AI provider configuration (Step 1: API key validation, see the `aikeys`
+# app). The base URL of every supported provider can be overridden with the
+# MODEL_*_ENDPOINT variables in backend/.env; the defaults below are the
+# official OpenAI-compatible endpoints, so validation works out of the box
+# even when those variables are absent.
+# ---------------------------------------------------------------------------
+AI_PROVIDERS = {
+    "deepseek": {
+        "label": "DeepSeek",
+        "endpoint": os.getenv("MODEL_DEEPSEEK_ENDPOINT", "https://api.deepseek.com/v1"),
+    },
+    "openai": {
+        "label": "OpenAI",
+        "endpoint": os.getenv("MODEL_OPENAI_ENDPOINT", "https://api.openai.com/v1"),
+    },
+    "modelscope": {
+        "label": "ModelScope (DashScope)",
+        "endpoint": os.getenv("MODEL_MODELSCOPE_ENDPOINT", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
+    },
+    "custom": {
+        # Usually supplied per request from the settings UI; the env var is a
+        # server-wide default when one is preferred.
+        "label": "Custom endpoint",
+        "endpoint": os.getenv("MODEL_CUSTOM_ENDPOINT", ""),
+    },
+}
+
+# Master key for the stdlib-only authenticated encryption used to store
+# user-supplied AI keys (aikeys.crypto). Must be set in backend/.env; the
+# validate endpoint returns 503 while it is missing.
+AI_CREDENTIAL_ENCRYPTION_KEY = os.getenv("AI_CREDENTIAL_ENCRYPTION_KEY", "")

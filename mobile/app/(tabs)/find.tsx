@@ -19,6 +19,7 @@ import { SUBJECTS } from '@/data/subjects';
 import { useAsyncData } from '@/hooks/useAsyncData';
 import { listTutors } from '@/lib/api';
 import type { TutorSummary } from '@/lib/types';
+import { useAuth } from '@/stores/AuthProvider';
 import { colors, fonts, radii, shadows, spacing } from '@/theme';
 
 type SortMode = 'Recommended' | 'Rating' | 'Sessions';
@@ -53,6 +54,8 @@ function matches(tutor: TutorSummary, query: string, subject: string | null): bo
 
 export default function FindTutorsScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
+  const isTutor = profile?.role === 'tutor';
   const params = useLocalSearchParams<{ q?: string; subject?: string }>();
   const initialQuery = firstParam(params.q);
   const initialSubject = firstParam(params.subject);
@@ -85,6 +88,32 @@ export default function FindTutorsScreen() {
       return b.rating - a.rating || b.sessions_count - a.sessions_count;
     });
   }, [data, query, sort, subject]);
+
+  // Role guard: tutor accounts cannot book sessions (the booking endpoint
+  // is student-only), so a tutor that lands here is pointed to their
+  // request queue instead of the discovery list.
+  if (isTutor) {
+    return (
+      <Screen>
+        <ScreenHeader
+          eyebrow="Tutor discovery"
+          title="Find the right tutor"
+          subtitle="Search your course, compare experience, then open a profile to book a visible slot."
+        />
+        <EmptyState
+          icon="people-outline"
+          title="Find a tutor is for student accounts"
+          body="Your account is a tutor account. Respond to incoming requests or manage your availability instead."
+          action={
+            <PrimaryButton
+              label="Open your requests"
+              onPress={() => router.replace('/(tabs)/requests')}
+            />
+          }
+        />
+      </Screen>
+    );
+  }
 
   const visibleSubjects = showAllSubjects ? SUBJECTS : SUBJECTS.slice(0, 7);
   const activeFilter = query.trim().length > 0 || Boolean(subject);

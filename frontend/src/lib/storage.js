@@ -5,6 +5,15 @@ export const STORAGE_KEYS = {
   accent: 'pcl-accent-v7',
   sidebar: 'pcl-sidebar-v7',
   legacyUser: 'pcl-user-v7',
+  // The AI device identity (see lib/aiIdentity.js). Deliberately NOT tied to
+  // the session keys: signing out (or using the app without a backend
+  // account) must not invalidate locally configured AI settings.
+  aiIdentity: 'pcl-ai-identity-v1',
+  // Local AI settings: the provider, endpoint and model picked in Settings
+  // (see lib/aiConfig.js). Like the identity, deliberately NOT tied to the
+  // session keys. The API key is never persisted here — it is validated and
+  // stored encrypted on the server; this record holds settings only.
+  aiConfig: 'pcl-ai-config-v1',
 };
 
 export const EMPTY_DB = {

@@ -16,7 +16,13 @@ import {
   updateProfile as patchProfile,
 } from '@/lib/api';
 import { clearTokens, loadStoredTokens, storeTokens } from '@/lib/tokens';
-import type { ApiUser, Profile, ProfileUpdatePayload, RegisterPayload } from '@/lib/types';
+import type {
+  ApiUser,
+  Profile,
+  ProfileUpdatePayload,
+  RegisterPayload,
+  RegisterSetup,
+} from '@/lib/types';
 
 export type AuthStatus = 'restoring' | 'authenticated' | 'unauthenticated';
 
@@ -25,7 +31,11 @@ interface AuthContextValue {
   user: ApiUser | null;
   profile: Profile | null;
   signIn: (username: string, password: string) => Promise<void>;
-  signUp: (payload: RegisterPayload) => Promise<void>;
+  /**
+   * Register and sign in. With a `setup` argument the selected role and the
+   * role-specific fields are applied after sign-in (see RegisterSetup).
+   */
+  signUp: (payload: RegisterPayload, setup?: RegisterSetup) => Promise<void>;
   signOut: () => void;
   refreshProfile: () => Promise<Profile>;
   updateProfile: (payload: ProfileUpdatePayload) => Promise<Profile>;
@@ -95,16 +105,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signUp = useCallback(
-    async (payload: RegisterPayload) => {
-      // The register endpoint does not return tokens, so registration is
-      // followed by an immediate sign-in with the same credentials.
-      await register(payload);
-      await signIn(payload.username, payload.password);
-    },
-    [signIn],
-  );
-
   const signOut = useCallback(() => {
     clearTokens();
     setProfile(null);
@@ -133,6 +133,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(nextProfile);
     return nextProfile;
   }, []);
+
+  const signUp = useCallback(
+    async (payload: RegisterPayload, setup?: RegisterSetup) => {
+      // The register endpoint does not return tokens, so registration is
+      // followed by an immediate sign-in with the same credentials.
+      await register(payload);
+      await signIn(payload.username, payload.password);
+
+      if (!setup) {
+        return;
+      }
+
+      // The backend creates every account as a student. Complete the chosen
+      // role setup after sign-in: promote tutors, then save the role-specific
+      // profile fields. If this part fails the session stays signed in and the
+      // profile screen offers the same setup controls to finish it.
+      try {
+        if (setup.role === 'tutor') {
+          await becomeTutor();
+        }
+        const patch: ProfileUpdatePayload = {};
+        if (setup.fullName?.trim()) {
+          patch.full_name = setup.fullName.trim();
+        }
+        if (setup.role === 'student' && setup.major?.trim()) {
+          patch.major = setup.major.trim();
+        }
+        if (setup.role === 'tutor' && (setup.subjects?.length ?? 0) > 0) {
+          patch.subjects = setup.subjects;
+        }
+        if (Object.keys(patch).length > 0) {
+          await updateProfile(patch);
+        }
+      } catch (error) {
+        console.warn('Registration finished, but the role setup failed:', error);
+      }
+    },
+    [signIn, becomeTutor, updateProfile],
+  );
 
   const value = useMemo(
     () => ({

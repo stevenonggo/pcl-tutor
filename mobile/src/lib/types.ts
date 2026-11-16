@@ -36,6 +36,22 @@ export interface RegisterPayload {
   password: string;
 }
 
+/**
+ * Role setup captured on the registration screen, mirroring the website's
+ * register card (role switch + role-specific fields). The backend creates
+ * every account as a student, so the tutor promotion and profile fields are
+ * applied after sign-in via become-tutor and the profile PATCH endpoint.
+ */
+export interface RegisterSetup {
+  role: UserRole;
+  /** "Full Name" field from the website register form. */
+  fullName?: string;
+  /** Shown only for the student role on the website register form. */
+  major?: string;
+  /** Shown only for the tutor role; the website requires at least one. */
+  subjects?: string[];
+}
+
 /** Full profile returned by GET/PATCH /api/profile/. */
 export interface Profile {
   id: string;

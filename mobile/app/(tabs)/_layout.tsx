@@ -18,9 +18,14 @@ function tabBarColor(color: unknown): string {
  * Gate for the private (tabs) group: unauthenticated visitors are sent to
  * sign-in; while the stored session is being restored a full-screen loader
  * is shown instead of flashing the wrong screen.
+ *
+ * The tab set is role-based, mirroring the website's role-aware navigation:
+ * students get the tutor discovery ("find") tab, tutors manage their
+ * workspace from the dashboard and the availability routes instead.
  */
 export default function TabsLayout() {
-  const { status } = useAuth();
+  const { status, profile } = useAuth();
+  const isTutor = profile?.role === 'tutor';
 
   if (status === 'unauthenticated') {
     return <Redirect href="/(auth)/login" />;
@@ -61,15 +66,17 @@ export default function TabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="find"
-        options={{
-          title: 'Find',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="search-outline" size={size} color={tabBarColor(color)} />
-          ),
-        }}
-      />
+      {!isTutor ? (
+        <Tabs.Screen
+          name="find"
+          options={{
+            title: 'Find',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="search-outline" size={size} color={tabBarColor(color)} />
+            ),
+          }}
+        />
+      ) : null}
       <Tabs.Screen
         name="requests"
         options={{

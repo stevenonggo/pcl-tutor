@@ -58,7 +58,9 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={contentStyles} keyboardShouldPersistTaps="handled">
         <View style={brandStyles}>
           <Text style={titleStyles}>PCL Tutor</Text>
-          <Text style={subtitleStyles}>Sign in to your learning workspace</Text>
+          <Text style={subtitleStyles}>
+            Sign in with your student or tutor account
+          </Text>
         </View>
 
         <View style={formStyles}>

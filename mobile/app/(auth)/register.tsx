@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   View,
@@ -14,24 +15,42 @@ import { Link } from 'expo-router';
 
 import { LabeledInput } from '@/components/LabeledInput';
 import { PrimaryButton } from '@/components/PrimaryButton';
+import { SubjectMultiSelect } from '@/components/SubjectMultiSelect';
 import { ApiError } from '@/lib/api';
 import { API_BASE } from '@/lib/config';
+import type { UserRole } from '@/lib/types';
 import { useAuth } from '@/stores/AuthProvider';
-import { colors, radii, spacing } from '@/theme';
+import { colors, fonts, radii, shadows, spacing } from '@/theme';
 
 /**
- * Account creation against the Django backend (POST /api/register/).
- * The backend requires username, email, and a password of at least 8
- * characters; registration signs the user in immediately afterwards.
+ * Account creation against the Django backend (POST /api/register/),
+ * mirroring the website's register card: a role switch plus role-specific
+ * fields (major for students, teaching subjects for tutors).
+ *
+ * The backend only accepts username/email/password and creates every account
+ * as a student, so the selected role is completed after sign-in: tutors are
+ * promoted via POST /api/profile/become-tutor/ and the role-specific fields
+ * are saved with the profile PATCH. Both calls live in the auth store's
+ * signUp and keep the session signed in if the extra setup fails.
  */
 export default function RegisterScreen() {
   const { signUp } = useAuth();
+  const [role, setRole] = useState<UserRole>('student');
   const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [major, setMajor] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [subjects, setSubjects] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function toggleSubject(subject: string) {
+    setSubjects((current) =>
+      current.includes(subject) ? current.filter((item) => item !== subject) : [...current, subject],
+    );
+  }
 
   function validate(): string | null {
     if (username.trim().length < 2) {
@@ -46,6 +65,9 @@ export default function RegisterScreen() {
     if (password !== confirm) {
       return 'Passwords do not match.';
     }
+    if (role === 'tutor' && subjects.length === 0) {
+      return 'Pick at least one subject you will teach.';
+    }
     return null;
   }
 
@@ -58,11 +80,19 @@ export default function RegisterScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await signUp({
-        username: username.trim(),
-        email: email.trim(),
-        password,
-      });
+      await signUp(
+        {
+          username: username.trim(),
+          email: email.trim(),
+          password,
+        },
+        {
+          role,
+          fullName,
+          major: role === 'student' ? major : undefined,
+          subjects: role === 'tutor' ? subjects : undefined,
+        },
+      );
       // Success: the (auth) group layout redirects to the tabs.
     } catch (err) {
       setError(
@@ -82,7 +112,33 @@ export default function RegisterScreen() {
       <ScrollView contentContainerStyle={contentStyles} keyboardShouldPersistTaps="handled">
         <View style={brandStyles}>
           <Text style={titleStyles}>Create your account</Text>
-          <Text style={subtitleStyles}>One account for students and tutors</Text>
+          <Text style={subtitleStyles}>Pick a role and set up your profile</Text>
+        </View>
+
+        <View style={roleSwitchStyles} accessibilityLabel="Choose your role">
+          {roleOptions.map((option) => (
+            <Pressable
+              key={option.role}
+              accessibilityRole="button"
+              accessibilityState={{ selected: role === option.role }}
+              onPress={() => {
+                setRole(option.role);
+                setError(null);
+              }}
+              style={({ pressed }) => [
+                roleCardStyles,
+                role === option.role ? roleCardSelectedStyles : null,
+                pressed ? { opacity: 0.9 } : null,
+              ]}
+            >
+              <Text
+                style={[roleCardTitleStyles, role === option.role ? { color: colors.primaryDark } : null]}
+              >
+                {option.title}
+              </Text>
+              <Text style={roleCardCaptionStyles}>{option.caption}</Text>
+            </Pressable>
+          ))}
         </View>
 
         <View style={formStyles}>
@@ -96,6 +152,14 @@ export default function RegisterScreen() {
             returnKeyType="next"
           />
           <LabeledInput
+            label="Full name"
+            value={fullName}
+            onChangeText={setFullName}
+            placeholder="Your full name"
+            autoComplete="name"
+            returnKeyType="next"
+          />
+          <LabeledInput
             label="Email"
             value={email}
             onChangeText={setEmail}
@@ -105,6 +169,15 @@ export default function RegisterScreen() {
             keyboardType="email-address"
             returnKeyType="next"
           />
+          {role === 'student' ? (
+            <LabeledInput
+              label="Major"
+              value={major}
+              onChangeText={setMajor}
+              placeholder="e.g. Artificial Intelligence"
+              returnKeyType="next"
+            />
+          ) : null}
           <LabeledInput
             label="Password"
             value={password}
@@ -123,6 +196,15 @@ export default function RegisterScreen() {
             returnKeyType="done"
             onSubmitEditing={handleSubmit}
           />
+          {role === 'tutor' ? (
+            <SubjectMultiSelect
+              label="Subjects you teach"
+              value={subjects}
+              onToggle={toggleSubject}
+              onRemove={(subject) => setSubjects((current) => current.filter((item) => item !== subject))}
+              hint="Pick at least one."
+            />
+          ) : null}
 
           {error ? (
             <View style={errorBoxStyles}>
@@ -131,7 +213,7 @@ export default function RegisterScreen() {
           ) : null}
 
           <PrimaryButton
-            label="Create account"
+            label={role === 'tutor' ? 'Create tutor account' : 'Create account'}
             loading={submitting}
             onPress={handleSubmit}
             style={{ marginTop: spacing.sm }}
@@ -151,6 +233,11 @@ export default function RegisterScreen() {
   );
 }
 
+const roleOptions: Array<{ role: UserRole; title: string; caption: string }> = [
+  { role: 'student', title: 'Student / Mentee', caption: 'Find and book a tutor' },
+  { role: 'tutor', title: 'Tutor / Mentor', caption: 'Manage requests and availability' },
+];
+
 const screenStyles: StyleProp<ViewStyle | TextStyle> = {
   flex: 1,
   backgroundColor: colors.background,
@@ -163,11 +250,12 @@ const contentStyles: StyleProp<ViewStyle | TextStyle> = {
 };
 
 const brandStyles: StyleProp<ViewStyle | TextStyle> = {
-  marginBottom: spacing.xl,
+  marginBottom: spacing.lg,
 };
 
 const titleStyles: StyleProp<ViewStyle | TextStyle> = {
   color: colors.text,
+  fontFamily: fonts.heading,
   fontSize: 24,
   fontWeight: '700',
 };
@@ -176,6 +264,42 @@ const subtitleStyles: StyleProp<ViewStyle | TextStyle> = {
   color: colors.muted,
   fontSize: 14,
   marginTop: spacing.xs,
+};
+
+const roleSwitchStyles: StyleProp<ViewStyle | TextStyle> = {
+  flexDirection: 'row',
+  gap: spacing.sm,
+  marginBottom: spacing.lg,
+};
+
+const roleCardStyles: StyleProp<ViewStyle | TextStyle> = {
+  backgroundColor: colors.surface,
+  borderColor: colors.border,
+  borderRadius: radii.md,
+  borderWidth: 1,
+  flex: 1,
+  gap: 3,
+  padding: spacing.md,
+  ...shadows.card,
+};
+
+const roleCardSelectedStyles: StyleProp<ViewStyle | TextStyle> = {
+  backgroundColor: colors.primarySoft,
+  borderColor: colors.primary,
+};
+
+const roleCardTitleStyles: StyleProp<TextStyle> = {
+  color: colors.text,
+  fontFamily: fonts.body,
+  fontSize: 13,
+  fontWeight: '700',
+};
+
+const roleCardCaptionStyles: StyleProp<TextStyle> = {
+  color: colors.muted,
+  fontFamily: fonts.body,
+  fontSize: 11,
+  lineHeight: 15,
 };
 
 const formStyles: StyleProp<ViewStyle | TextStyle> = {

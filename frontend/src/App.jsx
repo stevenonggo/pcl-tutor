@@ -15,7 +15,8 @@ import FormPage from './pages/FormPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AppShell from './components/AppShell';
 import SettingsDrawer from './components/SettingsDrawer';
-import { accountExists, findAccount, makeStudent, makeTutor, validateRegistration } from './lib/auth';
+import { accountExists, makeInitials, makeStudent, makeTutor, normalizeEmail, validateRegistration } from './lib/auth';
+import { AuthApiError, fetchLoginProfile, isStoredUser, profileToAccount } from './lib/authApi';
 import { buildNotifications, tutorsWithModes, visibleRequestsFor } from './lib/selectors';
 import { readDb, readJson, readSession, removeKey, STORAGE_KEYS, writeDb, writeJson } from './lib/storage';
 import { slotKey } from './lib/slots';
@@ -25,19 +26,79 @@ function ProtectedRoutes({ user, children }) {
   return children;
 }
 
+// Human-readable sign-in failures, keyed by the AuthApiError kind.
+const LOGIN_ERROR_MESSAGES = {
+  credentials: 'That email or password is not correct.',
+  network: 'Could not reach the PCL Tutor server. Check that the backend is running, then try again.',
+  profile: 'Signed in, but the profile service is unavailable. Please sign in again.',
+};
+
+/**
+ * Restore the signed-in user from storage. The stored user object
+ * (pcl-user-v7) takes priority; the older session record (pcl-session-v1) is
+ * migrated by looking the account up in the local database.
+ */
+function restoreStoredUser() {
+  const stored = readJson(STORAGE_KEYS.legacyUser, null);
+  if (isStoredUser(stored)) return stored;
+  const legacy = readSession();
+  if (legacy?.userId) {
+    const db = readDb();
+    const found = [...db.students, ...db.tutors].find((item) => item.id === legacy.userId);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Give a restored user record the full local account shape: missing ids come
+ * from the account factories, and existing local identifiers (tutorId, ...)
+ * are preserved so seeded requests and availability keep matching.
+ */
+function normalizeUserRecord(stored) {
+  const base = stored.role === 'tutor'
+    ? makeTutor({ name: stored.name || stored.username, email: stored.email, password: '', subjects: stored.subjects })
+    : makeStudent({ name: stored.name || stored.username, email: stored.email, password: '', major: stored.major });
+  return {
+    ...base,
+    ...stored,
+    id: stored.id || base.id,
+    tutorId: stored.tutorId || (stored.role === 'tutor' ? stored.id || base.tutorId : base.tutorId),
+    role: stored.role,
+  };
+}
+
+/**
+ * Upsert an account into the local database, matched by id or (case-insensitive)
+ * email. The backend-detected role is the source of truth: a role change moves
+ * the record between the students and tutors collections.
+ */
+function upsertAccount(db, account) {
+  const matched = [...db.students, ...db.tutors].find((item) => (
+    item.id === account.id || normalizeEmail(item.email) === normalizeEmail(account.email)
+  ));
+  const collectionKey = account.role === 'tutor' ? 'tutors' : 'students';
+  const otherKey = account.role === 'tutor' ? 'students' : 'tutors';
+  const isMatch = (item) => item.id === matched?.id || normalizeEmail(item.email) === normalizeEmail(account.email);
+  return {
+    ...db,
+    [otherKey]: db[otherKey].filter((item) => !isMatch(item)),
+    [collectionKey]: [
+      ...db[collectionKey].filter((item) => !isMatch(item)),
+      { ...(matched || {}), ...account },
+    ],
+  };
+}
+
 export default function App() {
   // One versioned database is the single source of truth for accounts and workspace data.
   const [db, setDb] = useState(readDb);
-  const [session, setSession] = useState(readSession);
+  // The signed-in user, restored from storage on load (see restoreStoredUser).
+  const [user, setUser] = useState(restoreStoredUser);
   const [theme, setTheme] = useState(() => readJson(STORAGE_KEYS.theme, 'light'));
   const [accent, setAccent] = useState(() => readJson(STORAGE_KEYS.accent, '#0B8F68'));
   const [collapsed, setCollapsed] = useState(() => readJson(STORAGE_KEYS.sidebar, false));
   const [settingsOpen, setSettingsOpen] = useState(false);
-
-  const user = useMemo(() => {
-    if (!session?.userId) return null;
-    return [...db.students, ...db.tutors].find((item) => item.id === session.userId) || null;
-  }, [db.students, db.tutors, session]);
 
   const tutors = useMemo(() => tutorsWithModes(db.tutors, db.availability), [db.tutors, db.availability]);
   const visibleRequests = useMemo(() => visibleRequestsFor(user, db.requests), [user, db.requests]);
@@ -50,18 +111,28 @@ export default function App() {
     writeDb(db);
   }, [db]);
 
+  // Persist the signed-in user on both session keys so a reload restores the
+  // session; signing out clears both.
   useEffect(() => {
-    if (session?.userId) writeJson(STORAGE_KEYS.session, session);
-    else removeKey(STORAGE_KEYS.session);
-  }, [session]);
+    if (user) {
+      writeJson(STORAGE_KEYS.legacyUser, user);
+      writeJson(STORAGE_KEYS.session, { userId: user.id });
+    } else {
+      removeKey(STORAGE_KEYS.legacyUser);
+      removeKey(STORAGE_KEYS.session);
+    }
+  }, [user]);
 
+  // A restored user may not have a local record yet (fresh database): make
+  // sure one exists so the pages and selectors that read the database work.
   useEffect(() => {
-    removeKey(STORAGE_KEYS.legacyUser);
+    if (!user) return;
+    const record = normalizeUserRecord(user);
+    setDb((current) => upsertAccount(current, record));
+    if (record.id !== user.id) setUser(record);
+    // Mount-time migration only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (session?.userId && !user) setSession(null);
-  }, [session, user]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -77,14 +148,20 @@ export default function App() {
     writeJson(STORAGE_KEYS.sidebar, collapsed);
   }, [collapsed]);
 
-  // Login reads only accounts that actually exist in the local database.
-  const login = ({ email, password, role }) => {
-    const account = findAccount(db, { email, role });
-    if (!account || account.password !== password) {
-      return { ok: false, error: 'That email or password is not correct.' };
+  // Sign-in for both roles goes through the existing REST endpoints; the
+  // backend profile is the source of truth for the account's real role.
+  const login = async ({ email, password }) => {
+    try {
+      const account = profileToAccount(await fetchLoginProfile(email, password));
+      setDb((current) => upsertAccount(current, account));
+      setUser(account);
+      return { ok: true, user: account };
+    } catch (error) {
+      const message = error instanceof AuthApiError
+        ? LOGIN_ERROR_MESSAGES[error.kind]
+        : 'Sign-in failed. Please try again.';
+      return { ok: false, error: message };
     }
-    setSession({ userId: account.id });
-    return { ok: true, user: account };
   };
 
   const register = ({ role, name, email, password, major, subjects }) => {
@@ -108,11 +185,11 @@ export default function App() {
       }
       return { ...current, students: [...current.students, account] };
     });
-    setSession({ userId: account.id });
+    setUser(account);
     return { ok: true, user: account };
   };
 
-  const logout = () => setSession(null);
+  const logout = () => setUser(null);
 
   const updateUser = (patch) => {
     if (!user) return;
@@ -155,6 +232,14 @@ export default function App() {
 
       return { ...current, [collectionKey]: collection, sessions, requests };
     });
+
+    // The user object is app state now, so profile edits must land in both
+    // the database record and the in-memory user (initials follow renames).
+    setUser((current) => (
+      current
+        ? { ...current, ...patch, initials: patch.name ? makeInitials(patch.name) : current.initials }
+        : current
+    ));
   };
 
   // Booking creates both sides of the same request so Student and Tutor views stay in sync.

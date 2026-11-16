@@ -452,10 +452,17 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 .notification-item p { margin-top:3px; color:var(--ink-2); font-size:11px; line-height:1.5; }
 .notification-item span:last-child { display:block; margin-top:5px; color:var(--ink-3); font-size:9px; }
 .notification-dot { width:6px; height:6px; margin-top:6px; border-radius:50%; background:var(--accent); }
-.settings-drawer { position:fixed; top:0; right:0; z-index:80; width:min(400px,100vw); height:100vh; padding:28px; background:var(--surface); border-left:1px solid var(--line); box-shadow:-24px 0 60px rgba(0,0,0,.14); animation:drawer-in .28s var(--ease); }
+/* Two-part drawer: the header sits in a fixed (non-scrolling) top area and
+   .drawer-body is the only scrollable region, so the panel shows exactly one
+   scrollbar. min-height:0 lets the flex body shrink below its content and
+   scroll; the negative margins push the body out over the drawer's 28px
+   side/bottom padding (its own padding restores the 28px content inset), so
+   dimensions and the scrollbar position are unchanged. */
+.settings-drawer { position:fixed; top:0; right:0; z-index:80; width:min(400px,100vw); height:100vh; padding:28px; background:var(--surface); border-left:1px solid var(--line); box-shadow:-24px 0 60px rgba(0,0,0,.14); animation:drawer-in .28s var(--ease); display:flex; flex-direction:column; }
 .drawer-scrim,.mobile-scrim { position:fixed; inset:0; z-index:70; border:0; background:rgba(6,8,12,.38); backdrop-filter:blur(3px); }
 .mobile-scrim { z-index:45; display:none; }
-.drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; }
+.drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex:0 0 auto; }
+.drawer-body { flex:1 1 auto; min-height:0; margin:0 -28px -28px; padding:0 28px 28px; overflow-y:auto; overscroll-behavior:contain; }
 .drawer-head h2 { font-size:32px; }
 .settings-section { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
 .settings-label { display:block; margin-bottom:10px; color:var(--ink-2); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; }
@@ -750,6 +757,31 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 @media(min-width:621px) {
   .login-grid { height:100vh; }
   .login-panel { overflow-y:auto; }
+}
+
+/* 621-899px: reuse the existing stacked layout from the <=620px block —
+   green hero banner on top, login form below — instead of the two-column
+   grid whose fixed minimums (420px hero + 460px panel) clip the form in
+   this range. The 100vh pin is lifted so the page flows naturally, just
+   like the <=620px layout. Placed before the <=620px block so that block
+   still wins on phones with the identical values. */
+@media (max-width:899px) {
+  .login-grid { grid-template-columns:1fr; height:auto; }
+  .login-visual { min-width:0; min-height:370px; padding:26px 22px; }
+  .login-visual .brand-mark { width:72px; height:48px; flex:0 0 72px; }
+  .login-visual .brand-wordmark { font-size:15px; }
+  .login-visual-copy { margin-top:50px; }
+  .login-visual-footer { display:none; }
+  .login-panel { padding:22px; }
+}
+
+/* Smooth the layout/padding changes when the breakpoint flips, at 150ms.
+   Only set for users without a reduced-motion preference; the global
+   reduced-motion block at the end of this file disables it for the rest. */
+@media (prefers-reduced-motion: no-preference) {
+  .login-visual { transition:min-width .15s var(--ease), min-height .15s var(--ease), padding .15s var(--ease); }
+  .login-panel { transition:padding .15s var(--ease); }
+  .auth-card { transition:width .15s var(--ease); }
 }
 
 @media(max-width:620px) {
@@ -1061,6 +1093,8 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 .study-plan-error-head svg { flex:0 0 auto; margin-top:1px; color:var(--danger); }
 .study-plan-error-head strong { font-size:14px; color:var(--ink); }
 .study-plan-error-head p { margin-top:4px; color:var(--ink-2); font-size:12px; line-height:1.55; }
+.study-plan-error-head p.study-plan-error-kind { margin:0 0 4px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--danger); }
+.study-plan-error-head p.study-plan-error-kept { color:var(--ink-3); }
 .study-plan-error .primary-button { width:fit-content; min-height:38px; padding:0 14px; }
 
 .study-plan-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; padding:6px 24px 18px; }
@@ -1102,3 +1136,18 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
   .study-plan-recommend .tutor-grid { grid-template-columns:1fr; }
   .study-plan-card-head, .study-plan-summary, .study-plan-phases { padding-inline:18px; }
 }
+/* AI provider section (settings drawer) */
+.ai-input { margin-top:10px; }
+/* The three labelled rows: Endpoint / Model / API key */
+.ai-row { margin-top:16px; }
+.ai-row-label { display:block; margin-bottom:8px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-3); }
+.ai-model-controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+.ai-model-controls .select-field { flex:1; min-width:220px; }
+.ai-field-error { margin:6px 0 0; color:var(--danger); font-size:11.5px; }
+.ai-provider-note { margin-top:8px; color:var(--ink-3); font-size:11px; line-height:1.6; }
+.ai-input + .ai-provider-note { margin-top:6px; }
+.ai-status { display:flex; align-items:flex-start; gap:9px; margin-top:10px; padding:10px 12px; border-radius:9px; font-size:12px; line-height:1.5; }
+.ai-status svg { flex:0 0 auto; margin-top:1px; }
+.ai-status.ok { color:var(--success); background:color-mix(in srgb,var(--success) 8%,transparent); border:1px solid color-mix(in srgb,var(--success) 18%,var(--line)); }
+.ai-status.err { color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); border:1px solid color-mix(in srgb,var(--danger) 18%,var(--line)); }
+.ai-status-saved { margin-top:8px; color:var(--ink-2); font-size:12px; font-weight:600; }

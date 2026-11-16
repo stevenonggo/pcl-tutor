@@ -11,7 +11,7 @@ import {
   PLAN_GOALS,
   PLAN_CADENCES,
 } from '../lib/studyPlan';
-import { generateStudyPlan } from '../lib/studyPlanApi';
+import { AI_ERROR_KINDS, classifyAiPlanError, generateStudyPlan } from '../lib/studyPlanApi';
 
 // Everything that feeds the plan has a sensible default, so only "subject" is
 // genuinely required. The rest just shape the preview once one is chosen.
@@ -75,9 +75,13 @@ export default function StudyPlanPage({ tutors = [] }) {
       setStatus('ready');
     } catch (err) {
       if (seq.current !== mine) return;
-      setPlan(prevPlan); // keep the previously generated plan, if one exists
+      // Preserve the previously generated plan's data (never delete it), but
+      // never present it as a fresh "Live preview": the result card is hidden
+      // and only the error is shown. The next successful generation replaces
+      // the kept plan; while failing, the old plan is not displayed at all.
+      setPlan(prevPlan);
       setAiError(err?.message || 'AI generation is currently unavailable. Please try again.');
-      setStatus(prevPlan ? 'ready' : 'error');
+      setStatus('error');
     } finally {
       inFlight.current = false;
     }
@@ -104,6 +108,11 @@ export default function StudyPlanPage({ tutors = [] }) {
   };
 
   const loading = status === 'loading';
+  // A failed generation is labelled with its identifiable category when the
+  // error message matches a known backend class (key / model / endpoint /
+  // provider). Unidentified errors show no category, only the message.
+  const errorKind = aiError ? classifyAiPlanError(aiError) : 'unknown';
+  const errorKindLabel = errorKind === 'unknown' ? null : AI_ERROR_KINDS[errorKind];
 
   return (
     <div className="study-plan-page">
@@ -167,7 +176,9 @@ export default function StudyPlanPage({ tutors = [] }) {
                 <Icon name="close" size={16} />
                 <div>
                   <strong>AI study plans are currently unavailable.</strong>
+                  {errorKindLabel ? <p className="study-plan-error-kind">{errorKindLabel}</p> : null}
                   <p>{aiError}</p>
+                  {plan ? <p className="study-plan-error-kept">Your previous plan is kept — it is hidden while this error stands and will be replaced by the next successful generation.</p> : null}
                 </div>
               </div>
               <button type="button" className="primary-button" onClick={() => generate()}>
