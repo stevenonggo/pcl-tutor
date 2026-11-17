@@ -19,4 +19,7 @@ __pycache__/
 *.pyd
 .venv/
 venv/
+# Windows-style venv created under backend/ (WSL workarounds)
+.venv-win-style/
+backend/.venv-win-style/
 *.sqlite3

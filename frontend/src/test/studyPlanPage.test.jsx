@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { STUDENT, renderApp, signInAs } from './helpers';
 import { generateStudyPlan } from '../lib/studyPlanApi';

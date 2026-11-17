@@ -469,9 +469,6 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 .segmented { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .segmented button { min-height:42px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-2); font-size:12px; font-weight:600; }
 .segmented button.selected { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
-.accent-grid { display:flex; gap:9px; flex-wrap:wrap; }
-.accent-swatch { width:34px; height:34px; border-radius:50%; border:3px solid var(--surface); box-shadow:0 0 0 1px var(--line); }
-.accent-swatch.selected { box-shadow:0 0 0 2px var(--ink); }
 .settings-note { margin-top:32px; padding:14px; border:1px solid var(--line); border-radius:11px; background:var(--surface-soft); }
 .settings-note strong { font-size:12px; }
 .settings-note p { margin-top:6px; color:var(--ink-2); font-size:11px; line-height:1.6; }

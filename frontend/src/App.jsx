@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import FindTutorPage from './pages/FindTutorPage';
@@ -14,7 +14,7 @@ import TutorDetailPage from './pages/TutorDetailPage';
 import FormPage from './pages/FormPage';
 import NotFoundPage from './pages/NotFoundPage';
 import AppShell from './components/AppShell';
-import SettingsDrawer from './components/SettingsDrawer';
+import SettingsPage from './pages/SettingsPage';
 import { accountExists, makeInitials, makeStudent, makeTutor, normalizeEmail, validateRegistration } from './lib/auth';
 import { AuthApiError, fetchLoginProfile, isStoredUser, profileToAccount } from './lib/authApi';
 import { buildNotifications, tutorsWithModes, visibleRequestsFor } from './lib/selectors';
@@ -93,12 +93,11 @@ function upsertAccount(db, account) {
 export default function App() {
   // One versioned database is the single source of truth for accounts and workspace data.
   const [db, setDb] = useState(readDb);
+  const navigate = useNavigate();
   // The signed-in user, restored from storage on load (see restoreStoredUser).
   const [user, setUser] = useState(restoreStoredUser);
   const [theme, setTheme] = useState(() => readJson(STORAGE_KEYS.theme, 'light'));
-  const [accent, setAccent] = useState(() => readJson(STORAGE_KEYS.accent, '#0B8F68'));
   const [collapsed, setCollapsed] = useState(() => readJson(STORAGE_KEYS.sidebar, false));
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const tutors = useMemo(() => tutorsWithModes(db.tutors, db.availability), [db.tutors, db.availability]);
   const visibleRequests = useMemo(() => visibleRequestsFor(user, db.requests), [user, db.requests]);
@@ -138,11 +137,6 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     writeJson(STORAGE_KEYS.theme, theme);
   }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.style.setProperty('--accent', accent);
-    writeJson(STORAGE_KEYS.accent, accent);
-  }, [accent]);
 
   useEffect(() => {
     writeJson(STORAGE_KEYS.sidebar, collapsed);
@@ -373,7 +367,7 @@ export default function App() {
                 <Route path="/form" element={<Navigate to="/booking" replace />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
-              <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} setTheme={setTheme} accent={accent} setAccent={setAccent} />
+              <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} setTheme={setTheme} />
             </AppShell>
           </ProtectedRoutes>
         )}

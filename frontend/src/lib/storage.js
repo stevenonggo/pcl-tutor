@@ -2,7 +2,6 @@ export const STORAGE_KEYS = {
   db: 'pcl-db-v1',
   session: 'pcl-session-v1',
   theme: 'pcl-theme-v7',
-  accent: 'pcl-accent-v7',
   sidebar: 'pcl-sidebar-v7',
   legacyUser: 'pcl-user-v7',
   // The AI device identity (see lib/aiIdentity.js). Deliberately NOT tied to

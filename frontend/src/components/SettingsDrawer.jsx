@@ -15,7 +15,7 @@ const FALLBACK_PROVIDERS = [
 
 const providerLabel = (providers, id) => (providers.find((item) => item.id === id) || {}).label || id;
 
-export default function SettingsDrawer({ open, onClose, theme, setTheme, accent, setAccent }) {
+export default function SettingsDrawer({ open, onClose, theme, setTheme }) {
   const [providers, setProviders] = useState(FALLBACK_PROVIDERS);
   // The provider / endpoint / model rows start from the persisted local
   // settings so a reopened drawer restores exactly what the user picked.
@@ -188,13 +188,6 @@ export default function SettingsDrawer({ open, onClose, theme, setTheme, accent,
             <span className="settings-label">Appearance</span>
             <div className="segmented">
               {['light', 'dark'].map((item) => <button key={item} className={theme === item ? 'selected' : ''} onClick={() => setTheme(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
-            </div>
-          </section>
-
-          <section className="settings-section">
-            <span className="settings-label">Accent color</span>
-            <div className="accent-grid">
-              {['#0B8F68', '#3568C8', '#7A5AF8', '#D97706', '#B83B5E'].map((color) => <button key={color} className={`accent-swatch ${accent === color ? 'selected' : ''}`} style={{ background: color }} onClick={() => setAccent(color)} aria-label={`Use ${color}`} />)}
             </div>
           </section>
 

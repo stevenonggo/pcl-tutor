@@ -232,7 +232,7 @@ describe('settings drawer AI rows', () => {
     // The header lives outside the scroll region; every settings section lives inside it.
     expect(head.parentElement).toBe(drawer);
     expect(body.contains(head)).toBe(false);
-    expect(body.querySelectorAll('.settings-section').length).toBe(3);
+    expect(body.querySelectorAll('.settings-section').length).toBe(2);
   });
 
   it('removes the Design rule card — the bottom of the drawer stays plain', async () => {

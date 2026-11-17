@@ -1,0 +1,162 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Icon } from "../components/icons";
+import SelectField from "../components/SelectField";
+import { AiKeysApiError, fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey } from "../lib/aiKeysApi";
+import { isValidModelId, loadAiConfig, saveAiConfig } from "../lib/aiConfig";
+const FALLBACK_PROVIDERS = [
+  { id: "deepseek", label: "DeepSeek" },
+  { id: "openai", label: "OpenAI" },
+  { id: "modelscope", label: "ModelScope (DashScope)" },
+  { id: "custom", label: "Custom endpoint" }
+];
+const providerLabel = (providers, id) => (providers.find((item) => item.id === id) || {}).label || id;
+const SECTIONS = [
+  { id: "appearance", label: "Appearance" },
+  { id: "ai-providers", label: "AI Providers" },
+  { id: "api-key", label: "API Key" }
+];
+export default function SettingsPage({ theme, setTheme }) {
+  const [section, setSection] = useState("appearance");
+  const [providers, setProviders] = useState(FALLBACK_PROVIDERS);
+  const [initialConfig] = useState(loadAiConfig);
+  const [provider, setProvider] = useState(initialConfig.provider);
+  const [endpoint, setEndpoint] = useState(initialConfig.endpoint);
+  const [model, setModel] = useState(initialConfig.model);
+  const [apiKey, setApiKey] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [result, setResult] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchAiProviders();
+        if (!cancelled && Array.isArray(data.providers) && data.providers.length) setProviders(data.providers);
+      } catch {
+      }
+      try {
+        const status = await fetchAiCredentialStatus();
+        if (!cancelled) setSaved(status && status.configured ? status : null);
+      } catch {
+        if (!cancelled) setSaved(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    saveAiConfig({
+      provider,
+      // A custom URL only belongs to the custom provider; built-in
+      // providers use the backend catalogue endpoint, so never persist a
+      // stale URL under them.
+      endpoint: provider === "custom" ? endpoint : "",
+      model
+    });
+  }, [provider, endpoint, model]);
+  const handleProviderChange = (next) => {
+    setProvider(next);
+    setModels([]);
+    setModel("");
+    setModelsError(null);
+    setResult(null);
+  };
+  const handleEndpointChange = (value) => {
+    setEndpoint(value);
+    setModels([]);
+    setModelsError(null);
+  };
+  const handleLoadModels = async () => {
+    setModelsError(null);
+    if (!saved || !saved.configured) {
+      setModelsError("Validate the API key first \u2014 the model list uses your stored key.");
+      return;
+    }
+    if (saved.provider !== provider) {
+      setModelsError(
+        `Your stored key is for ${providerLabel(providers, saved.provider)} \u2014 validate the ${providerLabel(providers, provider)} key first, then load its models.`
+      );
+      return;
+    }
+    setModelsLoading(true);
+    try {
+      const data = await fetchAiModels(provider === "custom" ? { endpoint } : {});
+      const list = data && Array.isArray(data.models) ? data.models : [];
+      setModels(list);
+      if (list.length === 0) setModelsError("The provider returned no models.");
+    } catch (error) {
+      setModelsError(error instanceof Error ? error.message : "Could not load the model list.");
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+  const handleValidate = async () => {
+    if (!apiKey.trim()) {
+      setResult({ ok: false, message: "Enter the API key first, then press Validate." });
+      return;
+    }
+    setValidating(true);
+    setResult(null);
+    const payload = { provider, apiKey };
+    if (provider === "custom") payload.endpoint = endpoint;
+    try {
+      const data = await validateAiKey(payload);
+      setValidating(false);
+      if (data.valid) {
+        setSaved({ configured: true, provider: data.provider, key_hint: data.key_hint, verified: true });
+        setApiKey("");
+        setResult({ ok: true, message: data.message || "Key verified and stored encrypted on the server." });
+      } else {
+        setResult({ ok: false, message: data.message || "The provider could not verify this key." });
+      }
+    } catch (error) {
+      setValidating(false);
+      if (error instanceof AiKeysApiError && error.status === 401) {
+        setResult({ ok: false, message: "Your AI settings could not be verified \u2014 please try again." });
+        return;
+      }
+      setResult({ ok: false, message: error instanceof Error ? error.message : "Validation failed unexpectedly." });
+    }
+  };
+  const modelTrimmed = model.trim();
+  const modelError = modelTrimmed !== "" && !isValidModelId(modelTrimmed) ? "The model ID can only use letters, numbers and the characters . / _ -" : null;
+  return /* @__PURE__ */ React.createElement("div", { className: "settings-page" }, /* @__PURE__ */ React.createElement("header", { className: "settings-page-head" }, /* @__PURE__ */ React.createElement(Link, { className: "back-button", to: "/" }, /* @__PURE__ */ React.createElement(Icon, { name: "arrowLeft", size: 16 }), " Back"), /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("span", { className: "eyebrow" }, "Preferences"), /* @__PURE__ */ React.createElement("h1", null, "Settings"))), /* @__PURE__ */ React.createElement("div", { className: "settings-page-grid" }, /* @__PURE__ */ React.createElement("nav", { className: "settings-menu", "aria-label": "Settings sections" }, SECTIONS.map((item) => /* @__PURE__ */ React.createElement("button", { key: item.id, className: `settings-menu-item ${section === item.id ? "selected" : ""}`, onClick: () => setSection(item.id) }, item.label))), /* @__PURE__ */ React.createElement("div", { className: "settings-card" }, section === "appearance" ? /* @__PURE__ */ React.createElement("section", { className: "settings-section" }, /* @__PURE__ */ React.createElement("span", { className: "settings-label" }, "Appearance"), /* @__PURE__ */ React.createElement("div", { className: "segmented" }, ["light", "dark"].map((item) => /* @__PURE__ */ React.createElement("button", { key: item, className: theme === item ? "selected" : "", onClick: () => setTheme(item) }, item[0].toUpperCase() + item.slice(1))))) : null, section === "ai-providers" ? /* @__PURE__ */ React.createElement("section", { className: "settings-section" }, /* @__PURE__ */ React.createElement("span", { className: "settings-label" }, "AI providers"), /* @__PURE__ */ React.createElement("div", { className: "ai-row" }, /* @__PURE__ */ React.createElement("span", { className: "ai-row-label" }, "Endpoint"), /* @__PURE__ */ React.createElement(
+    SelectField,
+    {
+      label: "Provider",
+      variant: "dropdown",
+      value: provider,
+      onChange: handleProviderChange,
+      options: providers.map((item) => ({ value: item.id, label: item.label })),
+      placeholder: "Choose a provider"
+    }
+  ), provider === "custom" ? /* @__PURE__ */ React.createElement("label", { className: "input-shell ai-input" }, /* @__PURE__ */ React.createElement(Icon, { name: "settings", size: 15 }), /* @__PURE__ */ React.createElement("input", { type: "url", value: endpoint, onChange: (event) => handleEndpointChange(event.target.value), placeholder: "https://your-openai-compatible-gateway/v1", autoComplete: "off" })) : null), /* @__PURE__ */ React.createElement("div", { className: "ai-row" }, /* @__PURE__ */ React.createElement("span", { className: "ai-row-label" }, "Model"), /* @__PURE__ */ React.createElement("div", { className: "ai-model-controls" }, /* @__PURE__ */ React.createElement("button", { type: "button", className: "secondary-button small", onClick: handleLoadModels, disabled: modelsLoading }, modelsLoading ? "Loading\u2026" : "Load models"), /* @__PURE__ */ React.createElement(
+    SelectField,
+    {
+      label: "Discovered models",
+      variant: "dropdown",
+      value: model,
+      onChange: setModel,
+      options: models.map((item) => ({
+        value: item.id,
+        label: item.name && item.name !== item.id ? `${item.id} (${item.name})` : item.id
+      })),
+      placeholder: models.length ? "Choose a discovered model" : "No models loaded yet"
+    }
+  )), /* @__PURE__ */ React.createElement("label", { className: "input-shell ai-input" }, /* @__PURE__ */ React.createElement(Icon, { name: "settings", size: 15 }), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "text",
+      value: model,
+      onChange: (event) => setModel(event.target.value),
+      placeholder: "Model ID (e.g. deepseek-chat)",
+      autoComplete: "off",
+      "aria-label": "Model ID"
+    }
+  )), modelError ? /* @__PURE__ */ React.createElement("p", { className: "ai-field-error" }, modelError) : null), modelsError ? /* @__PURE__ */ React.createElement("div", { className: "ai-status err" }, /* @__PURE__ */ React.createElement(Icon, { name: "x", size: 15 }), /* @__PURE__ */ React.createElement("span", null, modelsError)) : null) : null, section === "api-key" ? /* @__PURE__ */ React.createElement("section", { className: "settings-section" }, /* @__PURE__ */ React.createElement("span", { className: "settings-label" }, "API key"), /* @__PURE__ */ React.createElement("div", { className: "ai-row" }, /* @__PURE__ */ React.createElement("label", { className: "input-shell ai-input" }, /* @__PURE__ */ React.createElement(Icon, { name: "lock", size: 15 }), /* @__PURE__ */ React.createElement("input", { type: "password", value: apiKey, onChange: (event) => setApiKey(event.target.value), placeholder: `API key for ${providerLabel(providers, provider)}`, autoComplete: "off" })), /* @__PURE__ */ React.createElement("p", { className: "ai-provider-note" }, "The key is sent only to the PCL Tutor backend, which checks it against the provider and stores it encrypted. It is never kept in your browser and never shown again."), /* @__PURE__ */ React.createElement("button", { className: "primary-button full small", onClick: handleValidate, disabled: validating }, validating ? "Validating\u2026" : "Validate API Key")), result ? /* @__PURE__ */ React.createElement("div", { className: `ai-status ${result.ok ? "ok" : "err"}` }, /* @__PURE__ */ React.createElement(Icon, { name: result.ok ? "check" : "x", size: 15 }), /* @__PURE__ */ React.createElement("span", null, result.message)) : null, saved && saved.configured ? /* @__PURE__ */ React.createElement("p", { className: "ai-status-saved" }, "Stored on the server", saved.key_hint ? ` \xB7 \u2026${saved.key_hint}` : "", saved.provider ? ` \xB7 ${providerLabel(providers, saved.provider)}` : "") : null) : null)));
+}
