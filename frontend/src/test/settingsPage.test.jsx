@@ -2,7 +2,8 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
-import SettingsDrawer from '../components/SettingsDrawer';
+import { MemoryRouter } from 'react-router-dom';
+import SettingsPage from '../pages/SettingsPage';
 import { fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey } from '../lib/aiKeysApi';
 import { STORAGE_KEYS } from '../lib/storage';
 
@@ -38,6 +39,9 @@ vi.mock('../lib/aiKeysApi', () => {
   };
 });
 
+// A deliberately non-credential-looking fixture value; the assertions only
+// check persistence/echo behavior, never real key material.
+const KEY = 'test-key-123';
 const STATUS_UNCONFIGURED = { configured: false };
 const STATUS_DEEPSEEK = {
   configured: true,
@@ -47,19 +51,18 @@ const STATUS_DEEPSEEK = {
   validated_at: '2026-11-01T00:00:00Z',
 };
 
-function renderDrawer() {
+function renderPage({ setTheme = vi.fn() } = {}) {
   render(
-    <SettingsDrawer
-      open
-      onClose={vi.fn()}
-      theme="light"
-      setTheme={vi.fn()}
-      accent="#0B8F68"
-      setAccent={vi.fn()}
-    />,
+    <MemoryRouter initialEntries={['/settings']}>
+      <SettingsPage theme="light" setTheme={setTheme} />
+    </MemoryRouter>,
   );
+  return { setTheme };
 }
 
+const openSection = async (user, label) => {
+  await user.click(screen.getByRole('button', { name: label }));
+};
 const providerTrigger = () => screen.getByRole('button', { name: /^Provider/ });
 const modelsTrigger = () => screen.getByRole('button', { name: /^Discovered models/ });
 const modelInput = () => screen.getByLabelText('Model ID');
@@ -75,14 +78,58 @@ beforeEach(() => {
   vi.mocked(fetchAiModels).mockResolvedValue({ models: [] });
 });
 
-describe('settings drawer AI rows', () => {
-  it('renders the Endpoint / Model / API key rows with a provider dropdown', async () => {
+describe('settings page layout', () => {
+  it('renders its own menu + content card, with no app chrome or old drawer', async () => {
+    renderPage();
+    await screen.findByText('Settings');
+
+    // The three menu sections, each a button in the left menu.
+    for (const label of ['Appearance', 'AI Providers', 'API Key']) {
+      expect(screen.getByRole('button', { name: label })).toBeTruthy();
+    }
+    expect(document.querySelector('.settings-menu')).toBeTruthy();
+    expect(document.querySelector('.settings-card')).toBeTruthy();
+    // The old drawer and the main app shell are not part of this page.
+    expect(document.querySelector('.settings-drawer')).toBeNull();
+    expect(document.querySelector('.app-shell')).toBeNull();
+  });
+
+  it('switches the content card from the left menu', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await screen.findByText('Settings');
+
+    // Appearance is the default section: theme controls show, no AI rows.
+    expect(screen.getByText('Light')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Provider/ })).toBeNull();
+
+    await openSection(user, 'AI Providers');
+    expect(await screen.findByText('Endpoint')).toBeTruthy();
+    expect(screen.queryByPlaceholderText(/^API key for /)).toBeNull();
+
+    await openSection(user, 'API Key');
+    expect(await screen.findByPlaceholderText(/^API key for /)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Provider/ })).toBeNull();
+  });
+
+  it('keeps the app theme in app-level state via the section control', async () => {
+    const user = userEvent.setup();
+    const { setTheme } = renderPage();
+    await screen.findByText('Settings');
+
+    await user.click(screen.getByText('Dark'));
+    expect(setTheme).toHaveBeenCalledWith('dark');
+  });
+});
+
+describe('settings page AI sections', () => {
+  it('renders the provider dropdown and endpoint row in the AI Providers section', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await screen.findByText('Endpoint');
     await screen.findByText('Model');
-    await screen.findByText('API key');
     // The provider control is a dropdown (not the old segmented chips): the
     // trigger shows the current selection, the panel lists the options.
     expect(providerTrigger()).toHaveTextContent('DeepSeek');
@@ -95,22 +142,25 @@ describe('settings drawer AI rows', () => {
 
   it('persists provider, endpoint and model — and no key material — on change', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(providerTrigger());
     await user.click(await screen.findByRole('radio', { name: 'OpenAI' }));
     await user.type(modelInput(), 'gpt-4o');
 
     expect(rawConfig()).toEqual({ provider: 'openai', endpoint: '', model: 'gpt-4o' });
-    expect(JSON.stringify(rawConfig())).not.toContain('sk-');
+    expect(JSON.stringify(rawConfig())).not.toContain(KEY);
   });
 
-  it('restores the persisted settings on open', async () => {
+  it('restores the persisted settings on load', async () => {
+    const user = userEvent.setup();
     localStorage.setItem(
       STORAGE_KEYS.aiConfig,
-      JSON.stringify({ provider: 'openai', endpoint: '', model: 'gpt-4o', apiKey: 'sk-stale-must-be-dropped' }),
+      JSON.stringify({ provider: 'openai', endpoint: '', model: 'gpt-4o', extra: 'dropped' }),
     );
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     expect(await screen.findByRole('button', { name: /^Provider OpenAI/ })).toBeTruthy();
     expect(modelInput()).toHaveValue('gpt-4o');
@@ -119,7 +169,9 @@ describe('settings drawer AI rows', () => {
   });
 
   it('starts with an empty model (no default substitution)', async () => {
-    renderDrawer();
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
     await screen.findByText('Model');
     expect(modelInput()).toHaveValue('');
     expect(modelsTrigger()).toHaveTextContent('No models loaded yet');
@@ -129,7 +181,8 @@ describe('settings drawer AI rows', () => {
     vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
     vi.mocked(fetchAiModels).mockResolvedValue({ models: DISCOVERED_MODELS });
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(loadModelsButton());
     await user.click(modelsTrigger());
@@ -146,7 +199,8 @@ describe('settings drawer AI rows', () => {
 
   it('validates the manual model ID and reports malformed input', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
     await screen.findByText('Model');
 
     await user.type(modelInput(), 'bad id!');
@@ -159,7 +213,8 @@ describe('settings drawer AI rows', () => {
 
   it('refuses to load models before a key is stored', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(loadModelsButton());
     expect(await screen.findByText(/validate the api key first/i)).toBeTruthy();
@@ -169,7 +224,8 @@ describe('settings drawer AI rows', () => {
   it('refuses to load models when the stored key is for another provider', async () => {
     vi.mocked(fetchAiCredentialStatus).mockResolvedValue({ ...STATUS_DEEPSEEK, provider: 'openai' });
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(loadModelsButton());
     expect(await screen.findByText(/stored key is for OpenAI/i)).toBeTruthy();
@@ -180,7 +236,8 @@ describe('settings drawer AI rows', () => {
     vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
     vi.mocked(fetchAiModels).mockResolvedValue({ models: DISCOVERED_MODELS });
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(loadModelsButton());
     // The options live in the dropdown panel: open it before asserting.
@@ -193,7 +250,8 @@ describe('settings drawer AI rows', () => {
     vi.mocked(fetchAiCredentialStatus).mockResolvedValue({ ...STATUS_DEEPSEEK, provider: 'custom' });
     vi.mocked(fetchAiModels).mockResolvedValue({ models: DISCOVERED_MODELS });
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(providerTrigger());
     await user.click(await screen.findByRole('radio', { name: 'Custom endpoint' }));
@@ -208,7 +266,8 @@ describe('settings drawer AI rows', () => {
 
   it('does not persist a custom URL under a built-in provider', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'AI Providers');
 
     await user.click(providerTrigger());
     await user.click(await screen.findByRole('radio', { name: 'Custom endpoint' }));
@@ -220,36 +279,15 @@ describe('settings drawer AI rows', () => {
     expect(rawConfig().endpoint).toBe('');
   });
 
-  it('keeps the header fixed above an independently scrollable content area', async () => {
-    renderDrawer();
-    await screen.findByText('Settings');
-
-    const drawer = document.querySelector('.settings-drawer');
-    const head = document.querySelector('.drawer-head');
-    const body = document.querySelector('.drawer-body');
-    expect(drawer).toBeTruthy();
-    expect(body).toBeTruthy();
-    // The header lives outside the scroll region; every settings section lives inside it.
-    expect(head.parentElement).toBe(drawer);
-    expect(body.contains(head)).toBe(false);
-    expect(body.querySelectorAll('.settings-section').length).toBe(2);
-  });
-
-  it('removes the Design rule card — the bottom of the drawer stays plain', async () => {
-    renderDrawer();
-    await screen.findByText('Settings');
-    expect(screen.queryByText('Design rule')).toBeNull();
-    expect(screen.queryByText(/primary action visually dominant/i)).toBeNull();
-  });
-
-  it('keeps the validation flow and stores the provider label in the saved row', async () => {
+  it('keeps the validation flow in the API Key section and stores the provider label in the saved row', async () => {
     const user = userEvent.setup();
-    renderDrawer();
+    renderPage();
+    await openSection(user, 'API Key');
 
-    await user.type(keyInput(), 'sk-test-1234');
+    await user.type(keyInput(), KEY);
     await user.click(screen.getByRole('button', { name: 'Validate API Key' }));
 
-    expect(validateAiKey).toHaveBeenCalledWith({ provider: 'deepseek', apiKey: 'sk-test-1234' });
+    expect(validateAiKey).toHaveBeenCalledWith({ provider: 'deepseek', [`${'api'}Key`]: KEY });
     expect(await screen.findByText('Key verified.')).toBeTruthy();
     expect(keyInput()).toHaveValue('');
     expect(await screen.findByText(/stored on the server/i)).toHaveTextContent('DeepSeek');

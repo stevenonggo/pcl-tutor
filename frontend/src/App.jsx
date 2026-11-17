@@ -339,6 +339,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage onLogin={login} onRegister={register} />} />
+      {/* The settings page is standalone (no main-app chrome around it) but still requires sign-in. */}
+      <Route path="/settings" element={user ? <SettingsPage theme={theme} setTheme={setTheme} /> : <Navigate to="/login" replace />} />
       <Route
         path="*"
         element={(
@@ -348,7 +350,7 @@ export default function App() {
               notifications={notifications}
               collapsed={collapsed}
               setCollapsed={setCollapsed}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => navigate('/settings')}
               onLogout={logout}
             >
               <Routes>
@@ -367,7 +369,6 @@ export default function App() {
                 <Route path="/form" element={<Navigate to="/booking" replace />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
-              <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} theme={theme} setTheme={setTheme} />
             </AppShell>
           </ProtectedRoutes>
         )}

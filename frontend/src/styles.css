@@ -452,26 +452,26 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 .notification-item p { margin-top:3px; color:var(--ink-2); font-size:11px; line-height:1.5; }
 .notification-item span:last-child { display:block; margin-top:5px; color:var(--ink-3); font-size:9px; }
 .notification-dot { width:6px; height:6px; margin-top:6px; border-radius:50%; background:var(--accent); }
-/* Two-part drawer: the header sits in a fixed (non-scrolling) top area and
-   .drawer-body is the only scrollable region, so the panel shows exactly one
-   scrollbar. min-height:0 lets the flex body shrink below its content and
-   scroll; the negative margins push the body out over the drawer's 28px
-   side/bottom padding (its own padding restores the 28px content inset), so
-   dimensions and the scrollbar position are unchanged. */
-.settings-drawer { position:fixed; top:0; right:0; z-index:80; width:min(400px,100vw); height:100vh; padding:28px; background:var(--surface); border-left:1px solid var(--line); box-shadow:-24px 0 60px rgba(0,0,0,.14); animation:drawer-in .28s var(--ease); display:flex; flex-direction:column; }
-.drawer-scrim,.mobile-scrim { position:fixed; inset:0; z-index:70; border:0; background:rgba(6,8,12,.38); backdrop-filter:blur(3px); }
-.mobile-scrim { z-index:45; display:none; }
-.drawer-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex:0 0 auto; }
-.drawer-body { flex:1 1 auto; min-height:0; margin:0 -28px -28px; padding:0 28px 28px; overflow-y:auto; overscroll-behavior:contain; }
-.drawer-head h2 { font-size:32px; }
+/* Standalone settings page (replaces the old drawer): its own left menu +
+   content card, with no main-app chrome around it. */
+.settings-page { min-height:100vh; background:var(--bg); padding:26px clamp(16px,4vw,44px) 56px; }
+.settings-page-head { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+.settings-page-head h1 { font-size:24px; margin:2px 0 0; }
+.settings-page-grid { display:grid; grid-template-columns:216px minmax(0,1fr); gap:22px; align-items:start; }
+.settings-menu { display:flex; flex-direction:column; gap:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:8px; position:sticky; top:20px; }
+.settings-menu-item { text-align:left; border:0; background:transparent; padding:10px 12px; border-radius:8px; color:var(--ink-2); font-size:13px; font-weight:600; cursor:pointer; }
+.settings-menu-item:hover { color:var(--ink); background:var(--surface-soft); }
+.settings-menu-item.selected { color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--surface)); }
+.settings-card { border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:22px; min-height:300px; }
+/* Only one section renders inside the card at a time, so its top divider is dropped. */
+.settings-card .settings-section:first-child { margin-top:0; padding-top:0; border-top:0; }
+@media (max-width:760px) { .settings-page-grid { grid-template-columns:1fr; } .settings-menu { flex-direction:row; position:static; } .settings-menu-item { flex:1; text-align:center; } }
+.mobile-scrim { position:fixed; inset:0; z-index:45; border:0; background:rgba(6,8,12,.38); backdrop-filter:blur(3px); display:none; }
 .settings-section { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
 .settings-label { display:block; margin-bottom:10px; color:var(--ink-2); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; }
 .segmented { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .segmented button { min-height:42px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-2); font-size:12px; font-weight:600; }
 .segmented button.selected { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
-.settings-note { margin-top:32px; padding:14px; border:1px solid var(--line); border-radius:11px; background:var(--surface-soft); }
-.settings-note strong { font-size:12px; }
-.settings-note p { margin-top:6px; color:var(--ink-2); font-size:11px; line-height:1.6; }
 
 .avatar { display:grid; place-items:center; flex:0 0 auto; width:40px; height:40px; border-radius:12px; color:#fff; background:linear-gradient(135deg,var(--avatar-accent),#111827); font-size:11px; font-weight:600; letter-spacing:.05em; }
 .avatar-sm { width:32px; height:32px; border-radius:10px; font-size:9px; }
