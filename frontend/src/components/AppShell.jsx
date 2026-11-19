@@ -22,7 +22,7 @@ const tutorNav = [
   { label: 'Subjects', to: '/subjects', icon: 'book' },
 ];
 
-export default function AppShell({ user, notifications = [], children, collapsed, setCollapsed, onOpenSettings, onLogout }) {
+export default function AppShell({ user, notifications = [], children, collapsed, setCollapsed, onOpenSettings, onLogout, authWarning = '', onDismissAuthWarning = () => {} }) {
   const location = useLocation();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -107,6 +107,13 @@ export default function AppShell({ user, notifications = [], children, collapsed
             </Link>
           </div>
         </header>
+        {authWarning ? (
+          <div className="auth-notice-banner" role="status">
+            <Icon name="spark" size={16} />
+            <span>{authWarning}</span>
+            <button type="button" onClick={onDismissAuthWarning} aria-label="Dismiss notice"><Icon name="x" size={14} /></button>
+          </div>
+        ) : null}
         <div className="page-area">{children}</div>
       </main>
 

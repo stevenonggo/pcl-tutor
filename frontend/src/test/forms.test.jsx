@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { INITIAL_REQUESTS, INITIAL_SESSIONS } from '../data/mockData';
 import { blockImplicitSubmit } from '../lib/forms';
+import { STORAGE_KEYS, writeJson } from '../lib/storage';
 import { STUDENT, TUTOR, cancelDialog, renderApp, signInAs } from './helpers';
 import SelectField from '../components/SelectField';
 
@@ -148,6 +150,15 @@ describe('suggest another time form', () => {
   beforeEach(() => {
     localStorage.clear();
     signInAs(TUTOR);
+    // The form resolves the request from the local db, so the seeded demo
+    // requests have to be written where the app reads them.
+    writeJson(STORAGE_KEYS.db, {
+      students: [],
+      tutors: [],
+      sessions: INITIAL_SESSIONS,
+      requests: INITIAL_REQUESTS,
+      availability: {},
+    });
   });
 
   // Suggesting a time is a send, so it gets the same Enter treatment as booking. The

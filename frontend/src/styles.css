@@ -126,6 +126,13 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 .mobile-menu-button { display:none; width:38px; height:38px; border:0; border-radius:9px; background:var(--surface); color:var(--ink); }
 .page-area { max-width:1480px; margin:0 auto; padding:44px 46px 72px; }
 
+/* Non-fatal auth notice (e.g. tutor setup incomplete after registration):
+   sits under the sticky topbar; the session stays alive while it shows. */
+.auth-notice-banner { display:flex; align-items:center; gap:10px; max-width:1480px; margin:12px auto 0; padding:12px 16px; border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line)); border-left:3px solid var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 8%,var(--surface)); font-size:13px; line-height:1.5; color:var(--ink); }
+.auth-notice-banner > span { flex:1; }
+.auth-notice-banner button { flex:0 0 auto; display:flex; padding:6px; border:0; border-radius:7px; background:transparent; color:var(--ink-2); cursor:pointer; }
+.auth-notice-banner button:hover { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
+
 /* Login: split-screen grid. The left illustration panel keeps a stable minimum
    width and the right panel absorbs content changes (min-width:0 on the card),
    so switching between sign-in and register never shifts the left panel. */
@@ -455,20 +462,43 @@ h3 { font-family:var(--font-heading); font-size:18px; line-height:1.15; letter-s
 /* Standalone settings page (replaces the old drawer): its own left menu +
    content card, with no main-app chrome around it. */
 .settings-page { min-height:100vh; background:var(--bg); padding:26px clamp(16px,4vw,44px) 56px; }
-.settings-page-head { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
-.settings-page-head h1 { font-size:24px; margin:2px 0 0; }
+.settings-page-head { display:flex; align-items:center; gap:18px; margin-bottom:26px; }
+.settings-page-head h1 { font-size:26px; margin:0; }
+.settings-page-head p { margin:4px 0 0; color:var(--ink-2); font-size:13px; }
 .settings-page-grid { display:grid; grid-template-columns:216px minmax(0,1fr); gap:22px; align-items:start; }
 .settings-menu { display:flex; flex-direction:column; gap:4px; border:1px solid var(--line); border-radius:12px; background:var(--surface); padding:8px; position:sticky; top:20px; }
-.settings-menu-item { text-align:left; border:0; background:transparent; padding:10px 12px; border-radius:8px; color:var(--ink-2); font-size:13px; font-weight:600; cursor:pointer; }
+.settings-menu-item { text-align:left; border:0; background:transparent; padding:12px 14px; border-radius:8px; color:var(--ink-2); font-size:14px; font-weight:600; cursor:pointer; }
 .settings-menu-item:hover { color:var(--ink); background:var(--surface-soft); }
 .settings-menu-item.selected { color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,var(--surface)); }
-.settings-card { border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:22px; min-height:300px; }
+.settings-card { border:1px solid var(--line); border-radius:14px; background:var(--surface); padding:26px; }
 /* Only one section renders inside the card at a time, so its top divider is dropped. */
 .settings-card .settings-section:first-child { margin-top:0; padding-top:0; border-top:0; }
+.settings-section-desc { margin:0 0 16px; color:var(--ink-2); font-size:12px; line-height:1.5; }
+/* Theme picker: two preview cards, the active one ringed + checked. */
+.theme-cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; max-width:420px; }
+.theme-card { position:relative; border:1px solid var(--line); border-radius:10px; background:var(--surface); padding:10px; cursor:pointer; text-align:left; }
+.theme-card:hover { border-color:var(--line-strong); }
+.theme-card.selected { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent); }
+.theme-preview { position:relative; display:block; height:64px; border-radius:6px; overflow:hidden; }
+.theme-preview-light { background:#F5F7F6; }
+.theme-preview-dark { background:#0A0D12; }
+.theme-preview-bar { position:absolute; inset:0 0 auto 0; height:14px; background:rgba(0,0,0,.06); }
+.theme-preview-dark .theme-preview-bar { background:rgba(255,255,255,.09); }
+.theme-preview-lines { position:absolute; left:8px; top:22px; display:flex; flex-direction:column; gap:5px; }
+.theme-preview-lines span { display:block; height:4px; border-radius:2px; }
+.theme-preview-lines span:nth-child(1) { width:60%; }
+.theme-preview-lines span:nth-child(2) { width:80%; }
+.theme-preview-lines span:nth-child(3) { width:45%; }
+.theme-preview-light .theme-preview-lines span { background:rgba(0,0,0,.18); }
+.theme-preview-dark .theme-preview-lines span { background:rgba(255,255,255,.28); }
+.theme-card-label { display:block; margin-top:8px; font-size:12px; font-weight:600; color:var(--ink-2); }
+.theme-card.selected .theme-card-label { color:var(--accent); }
+.theme-card-check { position:absolute; top:16px; right:16px; display:flex; color:var(--accent); }
+@media (max-width:520px) { .theme-cards { grid-template-columns:1fr; } }
 @media (max-width:760px) { .settings-page-grid { grid-template-columns:1fr; } .settings-menu { flex-direction:row; position:static; } .settings-menu-item { flex:1; text-align:center; } }
 .mobile-scrim { position:fixed; inset:0; z-index:45; border:0; background:rgba(6,8,12,.38); backdrop-filter:blur(3px); display:none; }
 .settings-section { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
-.settings-label { display:block; margin-bottom:10px; color:var(--ink-2); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; }
+.settings-label { display:block; margin-bottom:10px; color:var(--ink-2); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.1em; }
 .segmented { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .segmented button { min-height:42px; border:1px solid var(--line); border-radius:8px; background:var(--surface); color:var(--ink-2); font-size:12px; font-weight:600; }
 .segmented button.selected { border-color:var(--accent); color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }

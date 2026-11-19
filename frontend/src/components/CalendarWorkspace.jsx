@@ -3,28 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import ConfirmDialog from './ConfirmDialog';
 import { Icon } from './icons';
 import { slotKey } from '../lib/slots';
-
-const startDate = new Date('2026-09-28T12:00:00');
-
-export function datesForWeek(offset = 0) {
-  const first = new Date(startDate);
-  first.setDate(first.getDate() + offset * 7);
-  return Array.from({ length: 7 }, (_, index) => {
-    const day = new Date(first);
-    day.setDate(day.getDate() + index);
-    return day.toISOString().slice(0, 10);
-  });
-}
+import { datesForWeek, formatShort, parseISODate, todayISO, weekdayShort } from '../lib/dates';
 
 function pretty(date) {
-  return new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${date}T12:00:00`));
+  return formatShort(date);
 }
 
 export default function CalendarWorkspace({ items = [], availability = {}, tutorId, allowManage = false, onRemoveAvailability, onAddAvailability, onAddSlot }) {
   const navigate = useNavigate();
   const [weekOffset, setWeekOffset] = useState(0);
   const dates = useMemo(() => datesForWeek(weekOffset), [weekOffset]);
-  const [selectedDate, setSelectedDate] = useState(dates[0]);
+  // On entry the selected day is the user's current local date, not the week's
+  // first day; stored records on other days are reached by picking them here.
+  const [selectedDate, setSelectedDate] = useState(todayISO());
   const [selectedMode, setSelectedMode] = useState('All');
   // Announced to screen readers as well as being visible, so a removal is never silent.
   const [notice, setNotice] = useState('');
@@ -50,7 +41,7 @@ export default function CalendarWorkspace({ items = [], availability = {}, tutor
 
   const resetToCurrentWeek = () => {
     setWeekOffset(0);
-    setSelectedDate(datesForWeek(0)[0]);
+    setSelectedDate(todayISO());
     setNotice('');
     setLastRemoved(null);
   };
@@ -88,13 +79,12 @@ export default function CalendarWorkspace({ items = [], availability = {}, tutor
 
       <div className="week-strip">
         {dates.map((date) => {
-          const dateObj = new Date(`${date}T12:00:00`);
           const count = items.filter((item) => item.date === date).length;
           const openCount = tutorId ? (availability?.[tutorId]?.[date] || []).length : 0;
           return (
             <button type="button" key={date} className={`week-day ${selectedDate === date ? 'selected' : ''}`} onClick={() => selectDay(date)}>
-              <span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(dateObj)}</span>
-              <strong>{dateObj.getDate()}</strong>
+              <span>{weekdayShort(date)}</span>
+              <strong>{parseISODate(date).getDate()}</strong>
               <small>{tutorId ? `${openCount} open` : `${count} item${count !== 1 ? 's' : ''}`}</small>
             </button>
           );

@@ -2,11 +2,32 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TUTORS } from '../data/mockData';
+import { seedAvailability } from '../lib/slots';
+import { todayISO } from '../lib/dates';
+import { STORAGE_KEYS, writeJson } from '../lib/storage';
 import { STUDENT, TUTOR, cancelDialog, confirmDialog, renderApp, signInAs } from './helpers';
 
 // The generated data is deliberately varied, so these tests read the real slots
 // rather than hardcoding a time that a reshuffle would invalidate.
 const tutor = TUTORS.find((item) => item.id === 't1');
+
+// The booking form and the availability panel read tutors and slots from the
+// app's local db, so the persisted demo records have to be written where the
+// app reads them. Each demo tutor carries a unique email so the signed-in
+// user's mount-time upsert (which matches on id or email) cannot absorb them:
+// the panel keys off the demo tutor id, which is the availability key.
+const demoAvailability = seedAvailability(TUTORS);
+const demoTutors = TUTORS.map((item) => ({ ...item, email: `${item.id}@demo.example` }));
+
+function seedDb() {
+  writeJson(STORAGE_KEYS.db, {
+    students: [],
+    tutors: demoTutors,
+    sessions: [],
+    requests: [],
+    availability: demoAvailability,
+  });
+}
 
 function firstSlot(mode) {
   for (const [date, slots] of Object.entries(tutor.availability)) {
@@ -28,6 +49,7 @@ const liveSummary = () => document.querySelector('.form-summary');
 describe('booking a published slot', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedDb();
     signInAs(STUDENT);
   });
 
@@ -172,15 +194,18 @@ describe('booking a published slot', () => {
     const user = userEvent.setup();
     renderApp('/booking?tutor=t1');
 
-    // The date control is a chip group and the time control is a panel, so the same
-    // assertions read off the replacement widgets rather than native <option> elements.
-    const dateChips = await screen.findByRole('radiogroup', { name: 'Date' });
+    // The default day (today) is not among the tutor's published days, so the
+    // date control opens as a panel with a placeholder, not a chip row: the
+    // published days are picked from the panel, one at a time.
+    const dateTrigger = await screen.findByRole('button', { name: /date/i });
     const timeTrigger = screen.getByRole('button', { name: /Available time/ });
 
     for (const [date, slots] of Object.entries(tutor.availability)) {
-      // The chip label is a formatted date, so match on the value the chip carries
+      // The panel option carries the ISO date in its id, so match on that
       // rather than rebuilding the same Intl format inside the test.
-      const target = within(dateChips).getAllByRole('radio')
+      await user.click(dateTrigger);
+      const datePanel = screen.getByRole('radiogroup', { name: 'Date' });
+      const target = within(datePanel).getAllByRole('radio')
         .find((node) => node.getAttribute('id').endsWith(`-${date}`));
       expect(target, `date ${date} should be offered`).toBeTruthy();
       await user.click(target);
@@ -212,6 +237,7 @@ describe('booking a published slot', () => {
 describe('booking a custom time', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedDb();
     signInAs(STUDENT);
   });
 
@@ -299,6 +325,7 @@ describe('booking a custom time', () => {
 describe('publishing a new in-person slot', () => {
   beforeEach(() => {
     localStorage.clear();
+    seedDb();
     signInAs(TUTOR);
   });
 
@@ -315,9 +342,10 @@ describe('publishing a new in-person slot', () => {
     const user = userEvent.setup();
     renderApp('/booking');
 
-    // The first day the calendar workspace shows, with a time the tutor is free at.
-    const day = Object.keys(tutor.availability).sort()[0];
-    const taken = new Set(tutor.availability[day].map((slot) => slot.time));
+    // The publishing form and the calendar panel both open on the user's current
+    // local date, so a slot published here is the one the panel shows on entry.
+    const day = todayISO();
+    const taken = new Set((demoAvailability.t1[day] || []).map((slot) => slot.time));
     const freeTime = ['08:30', '12:00', '18:00'].find((time) => !taken.has(time));
 
     fireEvent.change(await screen.findByLabelText(/^date$/i), { target: { value: day } });
