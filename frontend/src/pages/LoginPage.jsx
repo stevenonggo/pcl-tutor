@@ -34,6 +34,7 @@ export default function LoginPage({ onLogin, onRegister }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [registering, setRegistering] = useState(false);
   const [registerRole, setRegisterRole] = useState('student');
   const [registerName, setRegisterName] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
@@ -50,6 +51,7 @@ export default function LoginPage({ onLogin, onRegister }) {
     setView(nextView);
     setError('');
     setNotice('');
+    setRegistering(false);
   };
 
   const submitSignIn = async (event) => {
@@ -69,13 +71,16 @@ export default function LoginPage({ onLogin, onRegister }) {
     if (result && !result.ok) setError(result.error || 'That email or password is not correct.');
   };
 
-  const submitRegister = (event) => {
+  const submitRegister = async (event) => {
     event.preventDefault();
     if (typeof onRegister !== 'function') return;
+    if (registering) return;
     setError('');
-    // App validates the payload, appends the account to the versioned db, and creates
-    // the session in the same step, so signup is also immediate sign-in.
-    const result = onRegister({ role: registerRole, name: registerName, email: registerEmail, password: registerPassword, major: registerMajor, subjects: registerSubjects });
+    setRegistering(true);
+    // The app validates the payload, creates the account on the backend, and
+    // signs in in the same step, so signup is also immediate sign-in.
+    const result = await onRegister({ role: registerRole, name: registerName, email: registerEmail, password: registerPassword, major: registerMajor, subjects: registerSubjects });
+    setRegistering(false);
     if (result && !result.ok) setError(result.error || 'Something went wrong while creating the account.');
   };
 
@@ -200,7 +205,7 @@ export default function LoginPage({ onLogin, onRegister }) {
                   </div>
                 )}
                 {error && <div className="form-error"><Icon name="x" size={16} /><span>{error}</span></div>}
-                <button className="primary-button full" type="submit">Create account <Icon name="arrowRight" size={16} /></button>
+                <button className="primary-button full" type="submit" disabled={registering}>{registering ? 'Creating account…' : <>Create account <Icon name="arrowRight" size={16} /></>}</button>
               </form>
             ) : (
               <form className="login-form" onSubmit={submitSignIn}>

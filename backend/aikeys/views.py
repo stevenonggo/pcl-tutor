@@ -9,6 +9,9 @@ Endpoints (all under /api/ai/, see ``aikeys/urls.py``):
   (provider + last-4 hint + validation time — never the key itself).
 - ``POST /models/``      list available models through the user's stored
   key (Step 2.1 discovery; returns normalized ``{id, name}`` entries).
+- ``POST /validate-model/`` verify a model ID against the user's stored key
+  (Step 2.2): the key is decrypted server-side and a one-token ping is
+  sent to the provider's OpenAI-compatible ``/chat/completions`` route.
 
 Security rules this module enforces:
 
@@ -24,8 +27,8 @@ Security rules this module enforces:
   using ``AI_CREDENTIAL_ENCRYPTION_KEY`` from the environment.
 - The provider probe is a cheap, token-free authentication check against
   the OpenAI-compatible ``GET {endpoint}/models`` route, so validating a
-  key never consumes model usage. Model validation is intentionally out of
-  scope for this step.
+  key never consumes model usage. Model validation (Step 2.2) is a
+  one-token ping against ``POST {endpoint}/chat/completions``.
 - Any endpoint the user supplies (the Custom endpoint flow or an explicit
   override) is probed through the SSRF guard in ``aikeys.ssrf``: only
   http/https, public resolvable hosts, every resolved address checked,
@@ -45,7 +48,7 @@ from rest_framework.views import APIView
 from .crypto import CredentialEncryptionError, decrypt_key, encrypt_key
 from .identity import JwtOrDeviceIdentity, owner_lookup
 from .models import AiCredential
-from .ssrf import SsrfError, check_url as ssrf_check, fetch_endpoint as ssrf_fetch, probe_endpoint as ssrf_probe
+from .ssrf import SsrfError, check_url as ssrf_check, fetch_endpoint as ssrf_fetch, post_endpoint as ssrf_post, probe_endpoint as ssrf_probe
 
 # A short timeout keeps a bad endpoint from hanging the request, and the
 # probe hits the models route so no tokens are ever consumed.
@@ -143,6 +146,33 @@ def _fetch_models_plain(url, api_key):
         return exc.code, None, ''
     except (urllib.error.URLError, TimeoutError, OSError):
         return None, None, 'The provider endpoint could not be reached.'
+
+
+def _ping_chat_plain(url, api_key, payload):
+    """POST a one-token ping to a trusted operator-configured chat route.
+
+    Returns ``(status, error)``: ``status`` is the provider's HTTP code,
+    ``None`` when no response was received; ``error`` carries a short
+    user-safe reason in that case. The key only ever appears in the
+    Authorization header — never in a response, log line, or error string.
+    """
+    request = urllib.request.Request(
+        url,
+        data=payload.encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=PROBE_TIMEOUT_SECONDS) as response:
+            return response.status, ''
+    except urllib.error.HTTPError as exc:
+        return exc.code, ''
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None, 'The provider endpoint could not be reached.'
 
 
 class AiProviderListView(APIView):
@@ -393,3 +423,124 @@ class AiModelsView(APIView):
         return Response(
             {'provider': provider, 'models': [], 'error': f'The provider could not be verified (HTTP {http_status}).'}
         )
+
+
+class AiModelValidateView(APIView):
+    """POST /api/ai/validate-model/ — verify a model ID against the stored key.
+
+    Step 2.2 of the AI work. The API key is never re-sent by the client: the
+    user's encrypted credential is decrypted for the duration of this request
+    and a single one-token ping is sent to the provider's OpenAI-compatible
+    ``POST {endpoint}/chat/completions`` route. A 2xx means the model exists
+    and is usable with that key; provider error codes are mapped onto the
+    same user-safe messages the study-plan flow classifies on.
+
+    - The provider is the one the credential was validated against; a user-
+      supplied ``endpoint`` override (the Custom flow) passes the SSRF gate
+      first and is POSTed through the guarded transport. Operator-configured
+      provider bases are trusted and POSTed plainly.
+    - The decrypted key only ever appears in the Authorization header — never
+      in a response, log line, or error string.
+    """
+
+    permission_classes = [JwtOrDeviceIdentity]
+
+    def post(self, request):
+        lookup, _kind = owner_lookup(request)
+        if lookup is None:  # Unreachable: JwtOrDeviceIdentity already answered 401.
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
+        credential = AiCredential.objects.filter(**lookup).first()
+        if credential is None:
+            return Response(
+                {'error': 'No API key is stored yet. Validate a key first.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        provider = credential.provider
+        catalog = _provider_catalog()
+        known = {item['id'] for item in catalog}
+        if provider not in known:
+            return Response(
+                {'error': f'Unsupported provider "{provider}". Supported: {", ".join(sorted(known))}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        label = next(item['label'] for item in catalog if item['id'] == provider)
+
+        model = str(request.data.get('model', '')).strip()
+        if not model:
+            return Response(
+                {'error': 'model is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Endpoint resolution mirrors the validate / models flows: an explicit
+        # request value (the Custom flow) wins, otherwise the configured base.
+        user_supplied_endpoint = bool(_normalize_endpoint(request.data.get('endpoint')))
+        endpoint = _normalize_endpoint(request.data.get('endpoint'))
+        if not endpoint:
+            endpoint = next(item['endpoint'] for item in catalog if item['id'] == provider)
+        if not endpoint:
+            return Response(
+                {'error': 'No endpoint is configured for the selected provider.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        master_key = getattr(settings, 'AI_CREDENTIAL_ENCRYPTION_KEY', '')
+        if not master_key:
+            return Response(
+                {'error': 'AI credential storage is not configured (AI_CREDENTIAL_ENCRYPTION_KEY is missing on the server).'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        try:
+            api_key = decrypt_key(credential.encrypted_key, master_key)
+        except CredentialEncryptionError:
+            return Response(
+                {'error': 'The stored credential could not be read. Please validate your key again.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        url = endpoint + '/chat/completions'
+        payload = json.dumps({
+            'model': model,
+            'messages': [{'role': 'user', 'content': 'ping'}],
+            'max_tokens': 1,
+        })
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+
+        if user_supplied_endpoint:
+            allowed, reason = ssrf_check(url)
+            if not allowed:
+                return Response(
+                    {'valid': False, 'model': model, 'message': reason},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            http_status, _body, error = ssrf_post(url, headers, payload, PROBE_TIMEOUT_SECONDS)
+        else:
+            http_status, error = _ping_chat_plain(url, api_key, payload)
+
+        if http_status is None:
+            detail = error or 'The provider endpoint could not be reached.'
+            return Response({'valid': False, 'model': model, 'message': detail})
+        if 200 <= http_status < 300:
+            return Response({
+                'valid': True,
+                'model': model,
+                'message': f'Model "{model}" is available and responds on {label}.',
+            })
+        if http_status in (401, 403):
+            message = f'The provider rejected this key (HTTP {http_status}). Validate the key again in Settings.'
+        elif http_status == 404:
+            message = ('The provider could not find the selected model (HTTP 404). '
+                      "Check the model ID in Settings, or pick one from the provider's model list.")
+        elif http_status == 400:
+            message = ('The provider rejected the request for the selected model (HTTP 400). '
+                      'Check the model ID, or validate a key for this provider in Settings.')
+        elif http_status == 429:
+            message = 'The provider rate-limited this request (HTTP 429). Try again in a moment.'
+        else:
+            message = f'The provider could not verify the selected model (HTTP {http_status}).'
+        return Response({'valid': False, 'model': model, 'message': message})

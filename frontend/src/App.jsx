@@ -16,7 +16,7 @@ import NotFoundPage from './pages/NotFoundPage';
 import AppShell from './components/AppShell';
 import SettingsPage from './pages/SettingsPage';
 import { accountExists, makeInitials, makeStudent, makeTutor, normalizeEmail, validateRegistration } from './lib/auth';
-import { AuthApiError, fetchLoginProfile, isStoredUser, profileToAccount } from './lib/authApi';
+import { AuthApiError, fetchBecomeTutor, fetchLoginProfile, fetchPatchProfile, fetchProfile, fetchRegister, isStoredUser, profileToAccount } from './lib/authApi';
 import { buildNotifications, tutorsWithModes, visibleRequestsFor } from './lib/selectors';
 import { readDb, readJson, readSession, removeKey, STORAGE_KEYS, writeDb, writeJson } from './lib/storage';
 import { slotKey } from './lib/slots';
@@ -31,6 +31,18 @@ const LOGIN_ERROR_MESSAGES = {
   credentials: 'That email or password is not correct.',
   network: 'Could not reach the PCL Tutor server. Check that the backend is running, then try again.',
   profile: 'Signed in, but the profile service is unavailable. Please sign in again.',
+};
+
+// Human-readable registration failures, keyed by the AuthApiError kind. The
+// account is created on the backend and then signed in through the same
+// /login/ + /profile/ pair, so late failures reuse the sign-in message shape.
+const REGISTER_ERROR_MESSAGES = {
+  duplicate: 'An account with that email already exists.',
+  register: 'The server could not create the account. Please try again.',
+  credentials: 'The account was created, but sign-in failed. Use the sign-in form to continue.',
+  network: 'Could not reach the PCL Tutor server. Check that the backend is running, then try again.',
+  profile: 'The account was created, but the profile service is unavailable. Use the sign-in form to continue.',
+  provision: 'Your account was created, but profile setup could not be completed. You are signed in — finish it later in your profile.',
 };
 
 /**
@@ -98,6 +110,9 @@ export default function App() {
   const [user, setUser] = useState(restoreStoredUser);
   const [theme, setTheme] = useState(() => readJson(STORAGE_KEYS.theme, 'light'));
   const [collapsed, setCollapsed] = useState(() => readJson(STORAGE_KEYS.sidebar, false));
+  // Non-fatal auth notices (e.g. tutor setup incomplete after registration).
+  // Shown as a dismissible banner inside the app shell so the session survives.
+  const [authWarning, setAuthWarning] = useState('');
 
   const tutors = useMemo(() => tutorsWithModes(db.tutors, db.availability), [db.tutors, db.availability]);
   const visibleRequests = useMemo(() => visibleRequestsFor(user, db.requests), [user, db.requests]);
@@ -145,6 +160,7 @@ export default function App() {
   // Sign-in for both roles goes through the existing REST endpoints; the
   // backend profile is the source of truth for the account's real role.
   const login = async ({ email, password }) => {
+    setAuthWarning('');
     try {
       const account = profileToAccount(await fetchLoginProfile(email, password));
       setDb((current) => upsertAccount(current, account));
@@ -158,32 +174,62 @@ export default function App() {
     }
   };
 
-  const register = ({ role, name, email, password, major, subjects }) => {
+  // Registration runs on the backend: the account is created with
+  // POST /register/ (username/email/password only — the endpoint does not
+  // accept role, major, or subjects), then signed in through the same
+  // /login/ + /profile/ pair the sign-in form uses, so the stored account
+  // carries a JWT exactly like a normal sign-in.
+  const register = async ({ role, name, email, password, major, subjects }) => {
     const error = validateRegistration({ role, name, email, password, major, subjects });
     if (error) return { ok: false, error };
     if (accountExists(db, email)) {
       return { ok: false, error: 'An account with that email already exists.' };
     }
 
-    const account = role === 'tutor'
-      ? makeTutor({ name, email, password, subjects })
-      : makeStudent({ name, email, password, major });
+    // 1) Create the account on the backend, then sign in through the same
+    //    /login/ + /profile/ pair the sign-in form uses, so the stored account
+    //    carries a JWT exactly like a normal sign-in.
+    let account;
+    try {
+      await fetchRegister(email, password);
+      account = profileToAccount(await fetchLoginProfile(email, password));
+    } catch (apiError) {
+      const message = apiError instanceof AuthApiError
+        ? REGISTER_ERROR_MESSAGES[apiError.kind]
+        : 'Registration failed. Please try again.';
+      return { ok: false, error: message };
+    }
 
-    setDb((current) => {
-      if (role === 'tutor') {
-        return {
-          ...current,
-          tutors: [...current.tutors, account],
-          availability: { ...current.availability, [account.id]: {} },
-        };
-      }
-      return { ...current, students: [...current.students, account] };
-    });
+    // 2) Persist the profile details the register endpoint does not accept:
+    //    PATCH /profile/ (full_name always; major when given; subjects only
+    //    for tutors) + POST /profile/become-tutor/ for tutor signups (409 =
+    //    already a tutor: success), then re-fetch the profile so the local
+    //    account reflects what the backend now stores. A provisioning
+    //    failure does NOT lose the created account: the user stays signed in
+    //    and the failure surfaces as a dismissible banner instead.
+    try {
+      const fields = { full_name: String(name || '').trim() };
+      if (String(major || '').trim()) fields.major = String(major).trim();
+      if (role === 'tutor') fields.subjects = subjects;
+      await fetchPatchProfile(account.token, fields);
+      if (role === 'tutor') await fetchBecomeTutor(account.token);
+      const refetched = { ...(await fetchProfile(account.token)), _access: account.token };
+      account = profileToAccount(refetched);
+    } catch (apiError) {
+      setAuthWarning(apiError instanceof AuthApiError && REGISTER_ERROR_MESSAGES[apiError.kind]
+        ? REGISTER_ERROR_MESSAGES[apiError.kind]
+        : REGISTER_ERROR_MESSAGES.provision);
+    }
+
+    setDb((current) => upsertAccount(current, account));
     setUser(account);
     return { ok: true, user: account };
   };
 
-  const logout = () => setUser(null);
+  const logout = () => {
+    setAuthWarning('');
+    setUser(null);
+  };
 
   const updateUser = (patch) => {
     if (!user) return;
@@ -352,6 +398,8 @@ export default function App() {
               setCollapsed={setCollapsed}
               onOpenSettings={() => navigate('/settings')}
               onLogout={logout}
+              authWarning={authWarning}
+              onDismissAuthWarning={() => setAuthWarning('')}
             >
               <Routes>
                 <Route path="/" element={<DashboardPage user={user} sessions={db.sessions} requests={visibleRequests} tutors={tutors} availability={db.availability} />} />

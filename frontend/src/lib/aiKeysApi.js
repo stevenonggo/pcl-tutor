@@ -120,3 +120,19 @@ export function fetchAiModels({ endpoint } = {}) {
   if (endpoint && endpoint.trim()) body.endpoint = endpoint.trim();
   return requestJson('/ai/models/', { method: 'POST', body });
 }
+
+/**
+ * Verify a model ID against the user's stored key.
+ *
+ * The key is never re-sent by the browser: the backend decrypts the stored
+ * credential and pings the provider's OpenAI-compatible `/chat/completions`
+ * route with a single token. No key material ever reaches the browser.
+ * Resolves to `{ valid, model, message }`; a provider rejection is `valid:
+ * false` (HTTP 200), while an unreachable backend / bad auth surfaces as
+ * AiKeysApiError.
+ */
+export function validateAiModel({ model, endpoint }) {
+  const body = { model };
+  if (endpoint && endpoint.trim()) body.endpoint = endpoint.trim();
+  return requestJson('/ai/validate-model/', { method: 'POST', body });
+}

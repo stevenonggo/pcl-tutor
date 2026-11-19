@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import SelectField from '../components/SelectField';
-import { AiKeysApiError, fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey } from '../lib/aiKeysApi';
+import { AiKeysApiError, fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey, validateAiModel } from '../lib/aiKeysApi';
 import { isValidModelId, loadAiConfig, saveAiConfig } from '../lib/aiConfig';
 
 // Built-in provider labels used only when the backend catalogue cannot be
@@ -50,6 +50,8 @@ export default function SettingsPage({ theme, setTheme }) {
   const [models, setModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelsError, setModelsError] = useState(null);
+  const [modelValidating, setModelValidating] = useState(false);
+  const [modelValidation, setModelValidation] = useState(null);
 
   // Refresh the AI catalogue and the stored-credential status on mount.
   // Failures are non-fatal: the built-in list is kept and the user can still
@@ -96,6 +98,7 @@ export default function SettingsPage({ theme, setTheme }) {
     setModels([]);
     setModel('');
     setModelsError(null);
+    setModelValidation(null);
     setResult(null);
   };
 
@@ -105,6 +108,41 @@ export default function SettingsPage({ theme, setTheme }) {
     // re-runs Load models once the URL is settled.
     setModels([]);
     setModelsError(null);
+    setModelValidation(null);
+  };
+
+  // Editing the model invalidates an earlier validation: it described the
+  // previous ID.
+  const handleModelInput = (value) => {
+    setModel(value);
+    setModelValidation(null);
+  };
+
+  const handleValidateModel = async () => {
+    const modelTrimmed = model.trim();
+    if (!saved || !saved.configured) {
+      // Model validation decrypts the stored key server-side, so a stored
+      // credential is required first — the key itself is never re-entered.
+      setModelValidation({ ok: false, message: 'Validate the API key first — model validation uses your stored key.' });
+      return;
+    }
+    if (!modelTrimmed) {
+      setModelValidation({ ok: false, message: 'Enter the model ID first, or pick a discovered model.' });
+      return;
+    }
+    setModelValidating(true);
+    setModelValidation(null);
+    try {
+      const data = await validateAiModel(provider === 'custom' ? { model: modelTrimmed, endpoint } : { model: modelTrimmed });
+      setModelValidation({
+        ok: Boolean(data.valid),
+        message: data.message || (data.valid ? 'Model verified.' : 'The provider could not verify this model.'),
+      });
+    } catch (error) {
+      setModelValidation({ ok: false, message: error instanceof Error ? error.message : 'Model validation failed unexpectedly.' });
+    } finally {
+      setModelValidating(false);
+    }
   };
 
   const handleLoadModels = async () => {
@@ -176,7 +214,10 @@ export default function SettingsPage({ theme, setTheme }) {
     <div className="settings-page">
       <header className="settings-page-head">
         <Link className="back-button" to="/"><Icon name="arrowLeft" size={16} /> Back</Link>
-        <div><span className="eyebrow">Preferences</span><h1>Settings</h1></div>
+        <div>
+          <h1>Settings</h1>
+          <p>Appearance, AI provider, and the API key this device remembers.</p>
+        </div>
       </header>
 
       <div className="settings-page-grid">
@@ -192,8 +233,18 @@ export default function SettingsPage({ theme, setTheme }) {
           {section === 'appearance' ? (
             <section className="settings-section">
               <span className="settings-label">Appearance</span>
-              <div className="segmented">
-                {['light', 'dark'].map((item) => <button key={item} className={theme === item ? 'selected' : ''} onClick={() => setTheme(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+              <p className="settings-section-desc">Choose how PCL Tutor looks on this device.</p>
+              <div className="theme-cards">
+                {['light', 'dark'].map((item) => (
+                  <button key={item} type="button" className={`theme-card ${theme === item ? 'selected' : ''}`} onClick={() => setTheme(item)}>
+                    <span className={`theme-preview theme-preview-${item}`} aria-hidden="true">
+                      <span className="theme-preview-bar" />
+                      <span className="theme-preview-lines"><span /><span /><span /></span>
+                    </span>
+                    <span className="theme-card-label">{item === 'light' ? 'Light' : 'Dark'}</span>
+                    {theme === item ? <span className="theme-card-check"><Icon name="check" size={14} /></span> : null}
+                  </button>
+                ))}
               </div>
             </section>
           ) : null}
@@ -201,6 +252,7 @@ export default function SettingsPage({ theme, setTheme }) {
           {section === 'ai-providers' ? (
             <section className="settings-section">
               <span className="settings-label">AI providers</span>
+              <p className="settings-section-desc">Pick the provider and model your AI study plans are generated with.</p>
 
               <div className="ai-row">
                 <span className="ai-row-label">Endpoint</span>
@@ -226,11 +278,14 @@ export default function SettingsPage({ theme, setTheme }) {
                   <button type="button" className="secondary-button small" onClick={handleLoadModels} disabled={modelsLoading}>
                     {modelsLoading ? 'Loading…' : 'Load models'}
                   </button>
+                  <button type="button" className="secondary-button small" onClick={handleValidateModel} disabled={modelValidating}>
+                    {modelValidating ? 'Validating…' : 'Validate model'}
+                  </button>
                   <SelectField
                     label="Discovered models"
                     variant="dropdown"
                     value={model}
-                    onChange={setModel}
+                    onChange={handleModelInput}
                     options={models.map((item) => ({
                       value: item.id,
                       label: item.name && item.name !== item.id ? `${item.id} (${item.name})` : item.id,
@@ -243,13 +298,14 @@ export default function SettingsPage({ theme, setTheme }) {
                   <input
                     type="text"
                     value={model}
-                    onChange={(event) => setModel(event.target.value)}
+                    onChange={(event) => handleModelInput(event.target.value)}
                     placeholder="Model ID (e.g. deepseek-chat)"
                     autoComplete="off"
                     aria-label="Model ID"
                   />
                 </label>
                 {modelError ? <p className="ai-field-error">{modelError}</p> : null}
+                {modelValidation ? <div className={`ai-status ${modelValidation.ok ? 'ok' : 'err'}`}><Icon name={modelValidation.ok ? 'check' : 'x'} size={15} /><span>{modelValidation.message}</span></div> : null}
               </div>
 
               {modelsError ? <div className="ai-status err"><Icon name="x" size={15} /><span>{modelsError}</span></div> : null}
@@ -259,6 +315,7 @@ export default function SettingsPage({ theme, setTheme }) {
           {section === 'api-key' ? (
             <section className="settings-section">
               <span className="settings-label">API key</span>
+              <p className="settings-section-desc">Validate once — the key is stored encrypted on the server and remembered for you.</p>
               <div className="ai-row">
                 <label className="input-shell ai-input">
                   <Icon name="lock" size={15} />
@@ -271,6 +328,9 @@ export default function SettingsPage({ theme, setTheme }) {
               {result ? <div className={`ai-status ${result.ok ? 'ok' : 'err'}`}><Icon name={result.ok ? 'check' : 'x'} size={15} /><span>{result.message}</span></div> : null}
               {saved && saved.configured ? (
                 <p className="ai-status-saved">Stored on the server{saved.key_hint ? ` · …${saved.key_hint}` : ''}{saved.provider ? ` · ${providerLabel(providers, saved.provider)}` : ''}</p>
+              ) : null}
+              {saved && saved.configured ? (
+                <p className="ai-provider-note">Your key is remembered on the server — model validation and study plans use it without you entering it again. Enter a new key only to replace it.</p>
               ) : null}
             </section>
           ) : null}

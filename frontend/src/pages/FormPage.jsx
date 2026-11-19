@@ -6,6 +6,7 @@ import SelectField from '../components/SelectField';
 import { Icon } from '../components/icons';
 import { CAMPUS_SPOTS, findSlot, indefiniteArticle, makeSlot, slotKey } from '../lib/slots';
 import { blockImplicitSubmit } from '../lib/forms';
+import { formatShort, todayISO } from '../lib/dates';
 
 // A custom-time request is a request, not a booking, so the student is only proposing a
 // starting point and the tutor still confirms it. An input[type=time] would be the
@@ -48,7 +49,9 @@ function BookingForm({ tutors = [], onCreateSession, availability = {} }) {
   );
   const [subject, setSubject] = useState(tutorData?.subjects?.[0] || '');
   const [topic, setTopic] = useState('');
-  const [date, setDate] = useState(params.get('date') || Object.keys(availability[tutorData?.id] || {})[0] || '');
+  // The URL date (an explicit choice, e.g. a slot link) wins; otherwise the form
+  // starts at the user's current local date, not the tutor's first seeded day.
+  const [date, setDate] = useState(params.get('date') || todayISO());
   const [time, setTime] = useState(params.get('time') || '');
   const [mode, setMode] = useState('Online');
   const [notes, setNotes] = useState('');
@@ -90,7 +93,7 @@ function BookingForm({ tutors = [], onCreateSession, availability = {} }) {
     if (!next) return;
     setTutor(next.id);
     setSubject(next.subjects?.[0] || '');
-    setDate(Object.keys(availability[next.id] || {})[0] || '');
+    setDate(todayISO());
     setTime('');
     setCustomTime('');
     setMode('Online');
@@ -163,7 +166,7 @@ function BookingForm({ tutors = [], onCreateSession, availability = {} }) {
 
           <div className="form-section"><div className="form-section-head"><span className="form-step">02</span><div><h2>Schedule</h2><p>Use a visible slot or make a request.</p></div></div>
             <div className="choice-row"><button type="button" className={`choice-button ${!custom ? 'selected' : ''}`} onClick={() => chooseSchedule(false)}>Available slot<span>Pick what the tutor already published.</span></button><button type="button" className={`choice-button ${custom ? 'selected' : ''}`} onClick={() => chooseSchedule(true)}>Custom time<span>Ask the tutor to fit you in.</span></button></div>
-            <div className={`field-grid ${custom ? 'custom-schedule-grid' : ''}`}>{custom ? <label className="native-datetime">Date<input type="date" value={date} onChange={(event) => { setDate(event.target.value); setCustomTime(''); }} /></label> : <SelectField label="Date" value={date} onChange={(next) => { setDate(next); if (custom) setCustomTime(''); else setTime(''); }} options={availableDates.map((item) => ({ value: item, label: new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', month: 'short' }).format(new Date(`${item}T12:00:00`)) }))} />}{!custom && <SelectField label="Available time" variant="dropdown" value={time} onChange={setTime} options={availableTimes.map((slot) => ({ value: slot.time, label: `${slot.time} · ${slot.mode}${slot.mode === 'Offline' ? ` · ${slot.location}` : ''}` }))} placeholder="Select a slot" />}
+            <div className={`field-grid ${custom ? 'custom-schedule-grid' : ''}`}>{custom ? <label className="native-datetime">Date<input type="date" value={date} onChange={(event) => { setDate(event.target.value); setCustomTime(''); }} /></label> : <SelectField label="Date" value={date} onChange={(next) => { setDate(next); if (custom) setCustomTime(''); else setTime(''); }} options={availableDates.map((item) => ({ value: item, label: formatShort(item) }))} />}{!custom && <SelectField label="Available time" variant="dropdown" value={time} onChange={setTime} options={availableTimes.map((slot) => ({ value: slot.time, label: `${slot.time} · ${slot.mode}${slot.mode === 'Offline' ? ` · ${slot.location}` : ''}` }))} placeholder="Select a slot" />}
               {custom && <div className="custom-time-field">
                 <span className="field-label" id="custom-time-label">Preferred time</span>
                 <div className="custom-time-grid" role="radiogroup" aria-labelledby="custom-time-label">
@@ -318,7 +321,9 @@ function ReviewSuggestionForm({ requestId, requests, onRequestAction }) {
 
 function AvailabilityForm({ onAddAvailability, availability = {}, tutorId }) {
   const navigate = useNavigate();
-  const [date, setDate] = useState(() => Object.keys(availability?.[tutorId] || {}).sort()[0] || '');
+  // Publishing starts at the user's current local date; earlier/later days are
+  // reached by editing the picker rather than defaulting to the oldest seeded day.
+  const [date, setDate] = useState(todayISO());
   const [time, setTime] = useState('09:00');
   const [duration, setDuration] = useState('60');
   const [mode, setMode] = useState('Online');

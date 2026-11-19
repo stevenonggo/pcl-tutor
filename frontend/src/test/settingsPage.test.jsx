@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import SettingsPage from '../pages/SettingsPage';
-import { fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey } from '../lib/aiKeysApi';
+import { fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey, validateAiModel } from '../lib/aiKeysApi';
 import { STORAGE_KEYS } from '../lib/storage';
 
 // The mock factory runs before this module's own consts exist (vi.mock is
@@ -36,6 +36,7 @@ vi.mock('../lib/aiKeysApi', () => {
     fetchAiCredentialStatus: vi.fn(),
     validateAiKey: vi.fn(),
     fetchAiModels: vi.fn(),
+    validateAiModel: vi.fn(),
   };
 });
 
@@ -76,6 +77,7 @@ beforeEach(() => {
   vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_UNCONFIGURED);
   vi.mocked(validateAiKey).mockResolvedValue({ valid: true, provider: 'deepseek', key_hint: 'abcd', message: 'Key verified.' });
   vi.mocked(fetchAiModels).mockResolvedValue({ models: [] });
+  vi.mocked(validateAiModel).mockResolvedValue({ valid: true, model: 'deepseek-chat', message: 'Model "deepseek-chat" is available and responds on DeepSeek.' });
 });
 
 describe('settings page layout', () => {
@@ -119,6 +121,47 @@ describe('settings page layout', () => {
 
     await user.click(screen.getByText('Dark'));
     expect(setTheme).toHaveBeenCalledWith('dark');
+  });
+
+  it('shows theme preview cards and marks only the active one', async () => {
+    const user = userEvent.setup();
+    // Drive real theme state so the selected card actually follows the click.
+    function Harness() {
+      const [theme, setTheme] = useState('light');
+      return <SettingsPage theme={theme} setTheme={setTheme} />;
+    }
+    render(
+      <MemoryRouter initialEntries={['/settings']}>
+        <Harness />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Settings');
+
+    let lightCard = screen.getByRole('button', { name: /^light$/i });
+    let darkCard = screen.getByRole('button', { name: /^dark$/i });
+    expect(lightCard.className).toContain('selected');
+    expect(darkCard.className).not.toContain('selected');
+    expect(lightCard.querySelector('.theme-preview-light')).toBeTruthy();
+    expect(darkCard.querySelector('.theme-preview-dark')).toBeTruthy();
+
+    await user.click(darkCard);
+    // Re-query after the re-render: the selected class now sits on the dark card.
+    lightCard = screen.getByRole('button', { name: /^light$/i });
+    darkCard = screen.getByRole('button', { name: /^dark$/i });
+    expect(darkCard.className).toContain('selected');
+    expect(lightCard.className).not.toContain('selected');
+  });
+
+  it('gives every section a one-line description', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('Settings');
+
+    expect(await screen.findByText(/choose how pcl tutor looks/i)).toBeTruthy();
+    await openSection(user, 'AI Providers');
+    expect(screen.getByText(/provider and model/i)).toBeTruthy();
+    await openSection(user, 'API Key');
+    expect(screen.getByText(/stored encrypted on the server/i)).toBeTruthy();
   });
 });
 
@@ -291,5 +334,79 @@ describe('settings page AI sections', () => {
     expect(await screen.findByText('Key verified.')).toBeTruthy();
     expect(keyInput()).toHaveValue('');
     expect(await screen.findByText(/stored on the server/i)).toHaveTextContent('DeepSeek');
+  });
+
+  it('validates a model against the stored key without re-entering it', async () => {
+    vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
+
+    await user.type(modelInput(), 'deepseek-chat');
+    await user.click(screen.getByRole('button', { name: /validate model/i }));
+
+    expect(validateAiModel).toHaveBeenCalledWith({ model: 'deepseek-chat' });
+    expect(await screen.findByText(/available and responds/i)).toBeTruthy();
+  });
+
+  it('refuses to validate a model before a key is stored', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
+
+    await user.type(modelInput(), 'deepseek-chat');
+    await user.click(screen.getByRole('button', { name: /validate model/i }));
+
+    expect(await screen.findByText(/validate the api key first/i)).toBeTruthy();
+    expect(validateAiModel).not.toHaveBeenCalled();
+  });
+
+  it('refuses to validate an empty model', async () => {
+    vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
+
+    await user.click(screen.getByRole('button', { name: /validate model/i }));
+    expect(await screen.findByText(/enter the model id first/i)).toBeTruthy();
+    expect(validateAiModel).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a provider model rejection (valid=false) without throwing', async () => {
+    vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
+    vi.mocked(validateAiModel).mockResolvedValue({ valid: false, model: 'nope-99', message: 'The provider could not find the selected model (HTTP 404). Check the model ID in Settings, or pick one from the provider\'s model list.' });
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
+
+    await user.type(modelInput(), 'nope-99');
+    await user.click(screen.getByRole('button', { name: /validate model/i }));
+
+    expect(await screen.findByText(/could not find the selected model/i)).toBeTruthy();
+  });
+
+  it('sends the custom endpoint for model validation', async () => {
+    vi.mocked(fetchAiCredentialStatus).mockResolvedValue({ ...STATUS_DEEPSEEK, provider: 'custom' });
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'AI Providers');
+
+    await user.click(providerTrigger());
+    await user.click(await screen.findByRole('radio', { name: 'Custom endpoint' }));
+    await user.type(screen.getByPlaceholderText('https://your-openai-compatible-gateway/v1'), 'https://gw.example/v1');
+    await user.type(modelInput(), 'gw-model-1');
+
+    await user.click(screen.getByRole('button', { name: /validate model/i }));
+    expect(validateAiModel).toHaveBeenCalledWith({ model: 'gw-model-1', endpoint: 'https://gw.example/v1' });
+  });
+
+  it('shows the remembered-key state in the API Key section', async () => {
+    vi.mocked(fetchAiCredentialStatus).mockResolvedValue(STATUS_DEEPSEEK);
+    const user = userEvent.setup();
+    renderPage();
+    await openSection(user, 'API Key');
+
+    expect(await screen.findByText(/stored on the server/i)).toHaveTextContent('…5150');
+    expect(screen.getByText(/remembered on the server/i)).toBeTruthy();
   });
 });
