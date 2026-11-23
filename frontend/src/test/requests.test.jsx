@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { INITIAL_REQUESTS } from '../data/mockData';
+import { INITIAL_REQUESTS, INITIAL_SESSIONS } from '../data/mockData';
+import { STORAGE_KEYS, writeJson } from '../lib/storage';
 import { STUDENT, TUTOR, cancelDialog, confirmDialog, renderApp, signInAs } from './helpers';
 
 // Nathan's own seeded request, read from the data rather than hardcoded so the suite
@@ -13,6 +14,15 @@ const OWN_REQUEST = INITIAL_REQUESTS.find((item) => item.id === 'sr1');
 describe('request decisions', () => {
   beforeEach(() => {
     localStorage.clear();
+    // The requests page reads from the local db, so the seeded demo records
+    // have to be written where the app reads them.
+    writeJson(STORAGE_KEYS.db, {
+      students: [],
+      tutors: [],
+      sessions: INITIAL_SESSIONS,
+      requests: INITIAL_REQUESTS,
+      availability: {},
+    });
   });
 
   it('shows the tutor all three seeded requests, including the student own', async () => {
@@ -108,7 +118,7 @@ describe('request decisions', () => {
   it('completes the Suggest time then Review suggestion round trip', async () => {
     signInAs(TUTOR);
     const user = userEvent.setup();
-    renderApp('/requests');
+    const app = renderApp('/requests');
 
     // Suggest a new time on Nathan's request (sr1), the one the student owns.
     const card = (await screen.findByText('Nathan Andrew')).closest('article');
@@ -139,8 +149,15 @@ describe('request decisions', () => {
     const logoutDialog = await screen.findByRole('dialog');
     expect(within(logoutDialog).getByText(/log out of pcl tutor/i)).toBeInTheDocument();
     await user.click(within(logoutDialog).getByRole('button', { name: 'Log out' }));
-    expect(await screen.findByLabelText(/username/i)).toHaveValue('student');
-    await user.click(screen.getByRole('button', { name: /enter pcl tutor/i }));
+
+    // Sign-in now goes through the backend email/password form, so the test
+    // simulates a successful student sign-in the way the app persists it:
+    // write the stored user key, then mount a fresh app. The local db (with
+    // the suggested request) survives that handoff — that is the point of
+    // this test.
+    app.unmount();
+    localStorage.setItem(STORAGE_KEYS.legacyUser, JSON.stringify(STUDENT));
+    renderApp('/');
     expect(await screen.findByText(/Find help that fits your schedule/i)).toBeInTheDocument();
 
     // The student now sees the suggested request and can open it by id.

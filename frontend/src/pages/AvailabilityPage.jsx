@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import CalendarWorkspace, { datesForWeek } from '../components/CalendarWorkspace';
+import CalendarWorkspace from '../components/CalendarWorkspace';
+import { todayISO } from '../lib/dates';
 import { Icon } from '../components/icons';
 import { findTutor } from '../lib/selectors';
 import { CAMPUS_SPOTS, indefiniteArticle, makeSlot, slotKey } from '../lib/slots';
@@ -22,7 +23,7 @@ export default function AvailabilityPage({ user, tutors = [], availability = {},
     }))),
     [availability, tutor.id],
   );
-  const [date, setDate] = useState(datesForWeek(0)[0]);
+  const [date, setDate] = useState(todayISO());
   const [time, setTime] = useState('09:00');
   const [mode, setMode] = useState('Online');
   const [location, setLocation] = useState('');

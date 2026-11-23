@@ -40,7 +40,7 @@ export function validateRegistration({ role, name, email, password, major, subje
   if (role !== 'student' && role !== 'tutor') return 'Choose whether you are registering as a student or a tutor.';
   if (cleanName.length < 2) return 'Enter your full name.';
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return 'Enter a valid email address.';
-  if (cleanPassword.length < 6) return 'Use a password with at least 6 characters.';
+  if (cleanPassword.length < 8) return 'Use a password with at least 8 characters.';
   // A student's major is required; a tutor's is optional, so the check is scoped to students.
   if (role === 'student' && cleanMajor.length < 2) return 'Enter your major.';
   // A tutor must teach at least one subject from the catalog.

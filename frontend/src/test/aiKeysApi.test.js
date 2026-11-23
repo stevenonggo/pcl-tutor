@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AiKeysApiError, fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey } from '../lib/aiKeysApi';
+import { AiKeysApiError, fetchAiCredentialStatus, fetchAiModels, fetchAiProviders, validateAiKey, validateAiModel } from '../lib/aiKeysApi';
 import { getDeviceIdentity } from '../lib/aiIdentity';
 
 // Exercises the service with a mocked global fetch — no real provider calls.
@@ -115,6 +115,33 @@ describe('aiKeysApi', () => {
   it('omits the Authorization header on /ai/models/ when no token is stored', async () => {
     global.fetch = vi.fn().mockResolvedValue(fakeResponse({ provider: 'deepseek', models: [], error: '' }));
     await fetchAiModels();
+    const [, init] = global.fetch.mock.calls[0];
+    expect(init.headers.Authorization).toBeUndefined();
+  });
+
+  it('validateAiModel POSTs the model to /ai/validate-model/ with the stored JWT', async () => {
+    storeUser('jwt-token-1');
+    global.fetch = vi.fn().mockResolvedValue(
+      fakeResponse({ valid: true, model: 'deepseek-chat', message: 'Model "deepseek-chat" is available and responds on DeepSeek.' }),
+    );
+
+    const result = await validateAiModel({ model: 'deepseek-chat', endpoint: ' https://gw.example.com/v1 ' });
+
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:8000/api/ai/validate-model/');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer jwt-token-1');
+    expect(JSON.parse(init.body)).toEqual({ model: 'deepseek-chat', endpoint: 'https://gw.example.com/v1' });
+    expect(result.valid).toBe(true);
+
+    // No endpoint override: the body carries only the model.
+    await validateAiModel({ model: 'gpt-4o' });
+    expect(JSON.parse(global.fetch.mock.calls[1][1].body)).toEqual({ model: 'gpt-4o' });
+  });
+
+  it('omits the Authorization header on /ai/validate-model/ when no token is stored', async () => {
+    global.fetch = vi.fn().mockResolvedValue(fakeResponse({ valid: false, model: 'x', message: 'no auth' }));
+    await validateAiModel({ model: 'x' });
     const [, init] = global.fetch.mock.calls[0];
     expect(init.headers.Authorization).toBeUndefined();
   });

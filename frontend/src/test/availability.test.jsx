@@ -2,13 +2,27 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TUTORS } from '../data/mockData';
-import { datesForWeek } from '../components/CalendarWorkspace';
+import { datesForWeek, formatShort, parseISODate, startOfWeekISO, todayISO, weekdayShort } from '../lib/dates';
+import { seedAvailability } from '../lib/slots';
+import { STORAGE_KEYS, writeJson } from '../lib/storage';
 import { TUTOR, renderApp, signInAs } from './helpers';
 
 const tutor = TUTORS.find((item) => item.id === 't1');
-// The publishing form and the calendar panel both default to the first day of week 0.
-const day = datesForWeek(0)[0];
+// Views default to the user's current local date; the demo records keep their
+// stored dates (Sept/Oct 2026) and are reached by navigating back weeks.
+const day = Object.keys(tutor.availability).sort()[0];
 const freeTime = ['08:30', '12:00', '18:00'].find((time) => !tutor.availability[day].some((slot) => slot.time === time));
+
+// Whole weeks to walk back from the current week to the week that holds the records.
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const weeksBack = Math.round(
+  (Date.parse(startOfWeekISO()) - Date.parse(startOfWeekISO(day))) / WEEK_MS,
+);
+const goToDemoWeek = async (user) => {
+  for (let i = 0; i < weeksBack; i += 1) {
+    await user.click(screen.getByRole('button', { name: 'Previous week' }));
+  }
+};
 
 const formPanel = () => document.querySelector('.availability-create-card');
 const slotPanel = () => within(document.querySelector('.open-slots-panel'));
@@ -20,6 +34,20 @@ describe('tutor availability feedback', () => {
   beforeEach(() => {
     localStorage.clear();
     signInAs(TUTOR);
+    // The panel and the agenda read availability from app state, so the persisted
+    // demo records have to be written where the app reads them (the local db). The
+    // demo tutor record is included because the panel keys off the tutor's record
+    // id, which is where the availability keys live.
+    writeJson(STORAGE_KEYS.db, {
+      students: [],
+      // The record carries an email so the mount-time upsert (which matches on
+      // id or email) cannot absorb it: it must keep the demo tutor id, which is
+      // the availability key the panel looks up.
+      tutors: [{ ...tutor, email: 'daniel.hartono@example.com' }],
+      sessions: [],
+      requests: [],
+      availability: { t1: seedAvailability(TUTORS).t1 },
+    });
   });
 
   const publishOnline = async (user) => {
@@ -31,8 +59,24 @@ describe('tutor availability feedback', () => {
 
   // The panel used to read only the slots added in this session, so a fresh load said
   // "No open slots" on days that the agenda beside it listed hours for.
-  it('lists the published slots on a fresh load, matching the agenda', async () => {
+  it('opens on the current week with today selected, and lists the seeded slots once their week is open', async () => {
+    const user = userEvent.setup();
     renderApp('/availability');
+
+    // Default on entry: the week the user is in now, with today selected — not the
+    // first seeded day. The week strip range and the agenda heading say so.
+    const currentWeek = datesForWeek(0);
+    expect(document.querySelector('.calendar-workspace-head h2')).toHaveTextContent(
+      `${formatShort(currentWeek[0])} — ${formatShort(currentWeek[6])}`,
+    );
+    expect(within(document.querySelector('.agenda-panel')).getByRole('heading', { level: 3 }))
+      .toHaveTextContent(formatShort(todayISO()));
+    const firstDay = document.querySelector('.week-day');
+    expect(firstDay).toHaveTextContent(weekdayShort(currentWeek[0]));
+    expect(firstDay).toHaveTextContent(String(parseISODate(currentWeek[0]).getDate()));
+
+    // Seeded records live on their stored dates; open the week that holds them.
+    await goToDemoWeek(user);
 
     const published = tutor.availability[day];
     expect(published.length).toBeGreaterThan(0);
@@ -123,15 +167,18 @@ describe('tutor availability feedback', () => {
 
     // The button still publishes, so nobody is locked out of the form.
     await user.click(screen.getByRole('button', { name: /publish availability/i }));
-    expect(await screen.findByRole('button', { name: removeName })).toBeInTheDocument();
+    // The new slot lives on the demo day, so the panel has to be moved there first.
+    await goToDemoWeek(user);
+    expect(screen.getByRole('button', { name: removeName })).toBeInTheDocument();
   });
 
   // Removing a slot cannot be undone from the agenda, so it waits for a confirmation.
   it('asks before removing a slot and keeps it when cancelled', async () => {
     const user = userEvent.setup();
     await publishOnline(user);
+    await goToDemoWeek(user);
 
-    await user.click(await screen.findByRole('button', { name: removeName }));
+    await user.click(screen.getByRole('button', { name: removeName }));
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent(/remove this open slot/i);
     expect(dialog).toHaveTextContent(new RegExp(freeTime));
@@ -150,8 +197,9 @@ describe('tutor availability feedback', () => {
   it('removes the slot and reports it in the calendar panel', async () => {
     const user = userEvent.setup();
     await publishOnline(user);
+    await goToDemoWeek(user);
 
-    await user.click(await screen.findByRole('button', { name: removeName }));
+    await user.click(screen.getByRole('button', { name: removeName }));
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove slot' }));
 
     await waitFor(() => expect(slotPanel().getByRole('status')).toHaveTextContent(`Removed the ${freeTime} online slot`));
@@ -161,8 +209,9 @@ describe('tutor availability feedback', () => {
   it('puts a removed slot back when Undo is pressed', async () => {
     const user = userEvent.setup();
     await publishOnline(user);
+    await goToDemoWeek(user);
 
-    await user.click(await screen.findByRole('button', { name: removeName }));
+    await user.click(screen.getByRole('button', { name: removeName }));
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove slot' }));
     await waitFor(() => expect(slotPanel().getByRole('status')).toHaveTextContent('Removed'));
 
@@ -176,9 +225,10 @@ describe('tutor availability feedback', () => {
   it('lets a published slot be removed once confirmed', async () => {
     const user = userEvent.setup();
     renderApp('/availability');
+    await goToDemoWeek(user);
 
     const first = tutor.availability[day][0];
-    await user.click(await screen.findByRole('button', { name: new RegExp(`Remove ${first.time} ${first.mode} slot`, 'i') }));
+    await user.click(screen.getByRole('button', { name: new RegExp(`Remove ${first.time} ${first.mode} slot`, 'i') }));
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Remove slot' }));
 
     await waitFor(() => expect(slotPanel().getByRole('status')).toHaveTextContent(`Removed the ${first.time} ${first.mode.toLowerCase()} slot`));
